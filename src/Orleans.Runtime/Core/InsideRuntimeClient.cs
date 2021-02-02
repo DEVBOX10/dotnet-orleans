@@ -161,7 +161,7 @@ namespace Orleans.Runtime
             {
                 message.TargetSilo = systemTargetGrainId.GetSiloAddress();
                 message.TargetActivation = ActivationId.GetDeterministic(targetGrainId);
-                message.Category = targetGrainId.Type.Equals(Constants.MembershipOracleType) ?
+                message.Category = targetGrainId.Type.Equals(Constants.MembershipServiceType) ?
                     Message.Categories.Ping : Message.Categories.System;
                 sharedData = this.systemSharedCallbackData;
             }
@@ -211,8 +211,7 @@ namespace Orleans.Runtime
         /// <param name="id"></param>
         private void UnregisterCallback(CorrelationId id)
         {
-            CallbackData ignore;
-            callbacks.TryRemove(id, out ignore);
+            callbacks.TryRemove(id, out _);
         }
 
         public void SniffIncomingMessage(Message message)

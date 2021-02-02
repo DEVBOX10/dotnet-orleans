@@ -568,7 +568,7 @@ namespace Orleans.Streams
                             StreamHandshakeToken newToken = await AsyncExecutorWithRetries.ExecuteWithRetries(
                                 i => DeliverBatchToConsumer(consumerData, batch),
                                 AsyncExecutorWithRetries.INFINITE_RETRIES,
-                                (exception, i) => !(exception is ClientNotAvailableException),
+                                (exception, i) => !(exception is ClientNotAvailableException) || IsShutdown,
                                 this.options.MaxEventDeliveryTime,
                                 DeliveryBackoffProvider);
                             if (newToken != null)
@@ -612,18 +612,15 @@ namespace Orleans.Streams
         {
             if (this.options.BatchContainerBatchSize <= 1)
             {
-                Exception ignore;
-
                 if (!cursor.MoveNext())
                 {
                     return null;
                 }
 
-                return cursor.GetCurrent(out ignore);
+                return cursor.GetCurrent(out _);
             }
             else if (this.options.BatchContainerBatchSize > 1)
             {
-                Exception ignore;
                 int i = 0;
                 var batchContainers = new List<IBatchContainer>();
 
@@ -634,7 +631,7 @@ namespace Orleans.Streams
                         break;
                     }
 
-                    var batchContainer = cursor.GetCurrent(out ignore);
+                    var batchContainer = cursor.GetCurrent(out _);
 
                     if (!ShouldDeliverBatch(streamId, batchContainer, filterData))
                         continue;

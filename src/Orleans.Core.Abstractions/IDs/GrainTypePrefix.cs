@@ -29,6 +29,11 @@ namespace Orleans.Runtime
         public const string GrainServicePrefix = SystemTargetPrefix + "user.";
 
         /// <summary>
+        /// A span representation of <see cref="ClientPrefix" />.
+        /// </summary>
+        public static readonly ReadOnlyMemory<byte> GrainServicePrefixBytes = Encoding.UTF8.GetBytes(GrainServicePrefix);
+
+        /// <summary>
         /// The prefix for clients.
         /// </summary>
         public const string ClientPrefix = SystemPrefix + "client";
@@ -62,7 +67,12 @@ namespace Orleans.Runtime
         /// <summary>
         /// Returns <see langword="true"/> if the type is a legacy grain, <see langword="false"/> if not.
         /// </summary>
-        private static bool IsLegacyGrain(this in GrainType type) => type.AsSpan().StartsWith(LegacyGrainPrefixBytes.Span);
+        public static bool IsLegacyGrain(this in GrainType type) => type.AsSpan().StartsWith(LegacyGrainPrefixBytes.Span);
+
+        /// <summary>
+        /// Returns <see langword="true"/> if the type is a grain service, <see langword="false"/> if not.
+        /// </summary>
+        public static bool IsGrainService(this in GrainType type) => type.AsSpan().StartsWith(GrainServicePrefixBytes.Span);
 
         /// <summary>
         /// Returns <see langword="true"/> if the type is a client, <see langword="false"/> if not.

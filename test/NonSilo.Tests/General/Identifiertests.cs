@@ -86,7 +86,6 @@ namespace UnitTests.General
                 var sw = new BinaryTokenStreamWriter();
                 sw.Write(siloAddress);
                 sw.Write(i);
-                var tmp = sw.ToByteArray();
                 var expected = JenkinsHash.ComputeHash(sw.ToByteArray());
 
                 Assert.Equal(expected, result[i]);
@@ -314,7 +313,7 @@ namespace UnitTests.General
         [Fact, TestCategory("BVT"), TestCategory("Identifiers")]
         public void ID_Interning_string_equals()
         {
-            Interner<string, string> interner = new Interner<string, string>();
+            using var interner = new Interner<string, string>();
             const string str = "1";
             string r1 = interner.FindOrCreate("1", _ => str);
             string r2 = interner.FindOrCreate("1", _ => null); // Should always be found
@@ -332,7 +331,7 @@ namespace UnitTests.General
         [Fact, TestCategory("BVT"), TestCategory("Identifiers")]
         public void ID_Intern_FindOrCreate_derived_class()
         {
-            Interner<int, A> interner = new Interner<int, A>();
+            using var interner = new Interner<int, A>();
             var obj1 = new A();
             var obj2 = new B();
             var obj3 = new B();
@@ -440,9 +439,6 @@ namespace UnitTests.General
 
             roundTripped = this.environment.SerializationManager.RoundTripSerializationForTesting(grainRef);
             Assert.Equal(grainRef, roundTripped); // GrainReference.OrleansSerializer
-
-            roundTripped = TestingUtils.RoundTripDotNetSerializer(grainRef, this.environment.GrainFactory, this.environment.SerializationManager);
-            Assert.Equal(grainRef, roundTripped); // GrainReference.DotNetSerializer
         }
 
         private GrainReference RoundTripGrainReferenceToKey(GrainReference input)
