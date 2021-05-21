@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,9 +16,9 @@ namespace Orleans.Runtime.Messaging
     {
         private readonly IConnectionListenerFactory listenerFactory;
         private readonly ConnectionManager connectionManager;
-        protected readonly ConcurrentDictionary<Connection, Task> connections = new ConcurrentDictionary<Connection, Task>(ReferenceEqualsComparer.Instance);
+        protected readonly ConcurrentDictionary<Connection, object> connections = new(ReferenceEqualsComparer.Instance);
         private readonly ConnectionCommon connectionShared;
-        private TaskCompletionSource<object> acceptLoopTcs;
+        private Task acceptLoopTask;
         private IConnectionListener listener;
         private ConnectionDelegate connectionDelegate;
 
@@ -41,8 +40,6 @@ namespace Orleans.Runtime.Messaging
 
         protected NetworkingTrace NetworkingTrace => this.connectionShared.NetworkingTrace;
 
-        public int ConnectionCount => this.connections.Count;
-
         protected ConnectionOptions ConnectionOptions { get; }
 
         protected abstract Connection CreateConnection(ConnectionContext context);
@@ -61,10 +58,10 @@ namespace Orleans.Runtime.Messaging
                     var connectionBuilder = new ConnectionBuilder(this.ServiceProvider);
                     connectionBuilder.Use(next =>
                     {
-                        return async context =>
+                        return context =>
                         {
                             context.Features.Set<IUnderlyingTransportFeature>(new UnderlyingConnectionTransportFeature { Transport = context.Transport });
-                            await next(context);
+                            return next(context);
                         };
                     });
                     this.ConfigureConnectionBuilder(connectionBuilder);
@@ -73,90 +70,64 @@ namespace Orleans.Runtime.Messaging
                 }
             }
         }
+
         protected virtual void ConfigureConnectionBuilder(IConnectionBuilder connectionBuilder) { }
 
-        public async Task BindAsync(CancellationToken cancellationToken)
+        protected async Task BindAsync()
         {
-            this.listener = await this.listenerFactory.BindAsync(this.Endpoint, cancellationToken);
+            this.listener = await this.listenerFactory.BindAsync(this.Endpoint);
         }
 
-        public void Start()
+        protected void Start()
         {
             if (this.listener is null) throw new InvalidOperationException("Listener is not bound");
-            this.acceptLoopTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            ThreadPool.UnsafeQueueUserWorkItem(this.StartAcceptingConnections, this.acceptLoopTcs);
+            acceptLoopTask = RunAcceptLoop();
         }
 
-        private void StartAcceptingConnections(object completionObj)
+        private async Task RunAcceptLoop()
         {
-            _ = RunAcceptLoop((TaskCompletionSource<object>)completionObj);
-
-            async Task RunAcceptLoop(TaskCompletionSource<object> completion)
+            await Task.Yield();
+            try
             {
-                try
+                while (true)
                 {
-                    while (true)
-                    {
-                        var context = await this.listener.AcceptAsync();
-                        if (context == null) break;
+                    var context = await this.listener.AcceptAsync();
+                    if (context == null) break;
 
-                        var connection = this.CreateConnection(context);
-                        this.StartConnection(connection);
-                    }
+                    var connection = this.CreateConnection(context);
+                    this.StartConnection(connection);
                 }
-                catch (Exception exception)
-                {
-                    this.NetworkingTrace.LogCritical("Exception in AcceptAsync: {Exception}", exception);
-                }
-                finally
-                {
-                    completion.TrySetResult(null);
-                }
+            }
+            catch (Exception exception)
+            {
+                this.NetworkingTrace.LogCritical("Exception in AcceptAsync: {Exception}", exception);
             }
         }
 
-        public async Task StopAsync(CancellationToken cancellationToken)
+        protected async Task StopAsync(CancellationToken cancellationToken)
         {
             try
             {
-                if (this.acceptLoopTcs is object)
+                await listener.UnbindAsync(cancellationToken);
+
+                if (acceptLoopTask is object)
                 {
-                    await Task.WhenAll(
-                        this.listener.UnbindAsync(cancellationToken).AsTask(),
-                        this.acceptLoopTcs.Task);
-                }
-                else
-                {
-                    await this.listener.UnbindAsync(cancellationToken);
+                    await acceptLoopTask;
                 }
 
-                var cycles = 0;
                 var closeTasks = new List<Task>();
-                var cancellationTask = cancellationToken.WhenCancelled();
-                while (this.ConnectionCount > 0)
+                foreach (var kv in connections)
                 {
-                    closeTasks.Clear();
-                    foreach (var connection in this.connections.Keys.ToImmutableList())
-                    {
-                        closeTasks.Add(connection.CloseAsync(exception: null));
-                    }
+                    closeTasks.Add(kv.Key.CloseAsync(exception: null));
+                }
 
-                    await Task.WhenAny(Task.WhenAll(closeTasks), cancellationTask);
-
-                    if (cancellationToken.IsCancellationRequested) break;
-
-                    if (++cycles > 100 && cycles % 500 == 0 && this.ConnectionCount > 0)
-                    {
-                        this.NetworkingTrace.LogWarning("Waiting for {NumRemaining} connections to terminate", this.ConnectionCount);
-                    }
+                if (closeTasks.Count > 0)
+                {
+                    await Task.WhenAny(Task.WhenAll(closeTasks), cancellationToken.WhenCancelled());
                 }
 
                 await this.connectionManager.Closed;
-
-                if (this.listener != null)
-                {
-                    await this.listener.DisposeAsync();
-                }
+                await this.listener.DisposeAsync();
             }
             catch (Exception exception)
             {
@@ -166,26 +137,22 @@ namespace Orleans.Runtime.Messaging
 
         private void StartConnection(Connection connection)
         {
-            ThreadPool.UnsafeQueueUserWorkItem(this.StartConnectionCore, connection);
-        }
+            connections.TryAdd(connection, null);
 
-        private void StartConnectionCore(object state)
-        {
-            var connection = (Connection)state;
-            _ = this.RunConnectionAsync(connection);
+            ThreadPool.UnsafeQueueUserWorkItem(state =>
+            {
+                var (t, connection) = ((ConnectionListener, Connection))state;
+                _ = t.RunConnectionAsync(connection);
+            }, (this, connection));
         }
 
         private async Task RunConnectionAsync(Connection connection)
         {
-            await Task.Yield();
-
             using (this.BeginConnectionScope(connection))
             {
                 try
                 {
-                    var connectionTask = connection.Run();
-                    this.connections.TryAdd(connection, connectionTask);
-                    await connectionTask;
+                    await connection.Run();
                     this.NetworkingTrace.LogInformation("Connection {Connection} terminated", connection);
                 }
                 catch (Exception exception)
