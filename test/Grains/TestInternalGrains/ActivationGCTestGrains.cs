@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Orleans;
 using Orleans.Concurrency;
-using Orleans.Configuration;
 using Orleans.Runtime;
 using UnitTests.GrainInterfaces;
 
@@ -93,7 +92,7 @@ namespace UnitTests.Grains
         }
     }
 
-    // Use this Test Class in Non.Silo test [SiloHostBuilder_GrainCollectionOptionsForZeroSecondsAgeLimitTest]
+    // Use this Test Class in Non.Silo test [SiloBuilder_GrainCollectionOptionsForZeroSecondsAgeLimitTest]
     public class CollectionSpecificAgeLimitForZeroSecondsActivationGcTestGrain : Grain, ICollectionSpecificAgeLimitForZeroSecondsActivationGcTestGrain
     {
         public Task Nop()

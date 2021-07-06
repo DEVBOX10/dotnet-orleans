@@ -2,13 +2,13 @@ using System;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
 using Orleans;
 using Orleans.Hosting;
 using Orleans.Internal;
 using Orleans.Runtime;
 using Orleans.TestingHost;
 using UnitTests.GrainInterfaces;
-using UnitTests.Grains;
 using Xunit;
 
 namespace Tester
@@ -24,17 +24,18 @@ namespace Tester
         {
             using var portAllocator = new TestClusterPortAllocator();
             var (siloPort, gatewayPort) = portAllocator.AllocateConsecutivePortPairs(1);
-            var silo = new SiloHostBuilder()
-                .AddMemoryGrainStorage("MemoryStore")
-                .UseLocalhostClustering(siloPort, gatewayPort)
-                .Build();
+            var host = new HostBuilder().UseOrleans(siloBuilder =>
+            {
+                siloBuilder.AddMemoryGrainStorage("MemoryStore")
+                .UseLocalhostClustering(siloPort, gatewayPort);
+            }).Build();
 
             var client = new ClientBuilder()
                 .UseLocalhostClustering(gatewayPort)
                 .Build();
             try
             {
-                await silo.StartAsync();
+                await host.StartAsync();
                 await client.Connect();
                 var grain = client.GetGrain<IEchoGrain>(Guid.NewGuid());
                 var result = await grain.Echo("test");
@@ -42,9 +43,9 @@ namespace Tester
             }
             finally
             {
-                await OrleansTaskExtentions.SafeExecute(() => silo.StopAsync());
+                await OrleansTaskExtentions.SafeExecute(() => host.StopAsync());
                 await OrleansTaskExtentions.SafeExecute(() => client.Close());
-                Utils.SafeExecute(() => silo.Dispose());
+                Utils.SafeExecute(() => host.Dispose());
                 Utils.SafeExecute(() => client.Close());
             }
         }
@@ -57,15 +58,19 @@ namespace Tester
         {
             using var portAllocator = new TestClusterPortAllocator();
             var (baseSiloPort, baseGatewayPort) = portAllocator.AllocateConsecutivePortPairs(2);
-            var silo1 = new SiloHostBuilder()
+            var silo1 = new HostBuilder().UseOrleans(siloBuilder =>
+            {
+                siloBuilder
                 .AddMemoryGrainStorage("MemoryStore")
-                .UseLocalhostClustering(baseSiloPort, baseGatewayPort)
-                .Build();
+                .UseLocalhostClustering(baseSiloPort, baseGatewayPort);
+            }).Build();
 
-            var silo2 = new SiloHostBuilder()
+            var silo2 = new HostBuilder().UseOrleans(siloBuilder =>
+            {
+                siloBuilder
                 .AddMemoryGrainStorage("MemoryStore")
-                .UseLocalhostClustering(baseSiloPort + 1, baseGatewayPort + 1, new IPEndPoint(IPAddress.Loopback, baseSiloPort))
-                .Build();
+                .UseLocalhostClustering(baseSiloPort + 1, baseGatewayPort + 1, new IPEndPoint(IPAddress.Loopback, baseSiloPort));
+            }).Build();
 
             var client = new ClientBuilder()
                 .UseLocalhostClustering(new[] { baseGatewayPort, baseGatewayPort + 1})

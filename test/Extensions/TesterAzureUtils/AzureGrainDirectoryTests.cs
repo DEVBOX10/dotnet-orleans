@@ -1,15 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.GrainDirectory;
 using Orleans.GrainDirectory.AzureStorage;
+using Orleans.Runtime;
 using Orleans.TestingHost.Utils;
 using Tester.Directories;
-using TestExtensions;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -56,8 +54,8 @@ namespace Tester.AzureUtils
                 var addr = new GrainAddress
                 {
                     ActivationId = Guid.NewGuid().ToString("N"),
-                    GrainId = "user/someraondomuser_" + Guid.NewGuid().ToString("N"),
-                    SiloAddress = "10.0.23.12:1000@5678"
+                    GrainId = GrainId.Parse("user/someraondomuser_" + Guid.NewGuid().ToString("N")),
+                    SiloAddress = SiloAddress.FromParsableString("10.0.23.12:1000@5678")
                 };
                 addresses.Add(addr);
                 await this.grainDirectory.Register(addr);

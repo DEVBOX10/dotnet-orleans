@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
-using Orleans.Concurrency;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Orleans.Runtime
 {
@@ -11,11 +12,11 @@ namespace Orleans.Runtime
     /// </summary>
     [Immutable]
     [Serializable]
+    [JsonConverter(typeof(GrainIdJsonConverter))]
     [StructLayout(LayoutKind.Auto)]
+    [GenerateSerializer]
     public readonly struct GrainId : IEquatable<GrainId>, IComparable<GrainId>, ISerializable
     {
-        internal static IGrainIdLoggingHelper GrainTypeNameMapper { get; set; }
-
         /// <summary>
         /// Creates a new <see cref="GrainType"/> instance.
         /// </summary>
@@ -37,11 +38,13 @@ namespace Orleans.Runtime
         /// <summary>
         /// The grain type.
         /// </summary>
+        [Id(1)]
         public GrainType Type { get; }
 
         /// <summary>
         /// The key.
         /// </summary>
+        [Id(2)]
         public IdSpan Key { get; }
 
         // TODO: remove implicit conversion (potentially make explicit to start with)
@@ -154,8 +157,7 @@ namespace Orleans.Runtime
         /// <inheritdoc/>
         public override string ToString()
         {
-            var type = GrainTypeNameMapper?.GetGrainTypeName(Type) ?? Type.ToStringUtf8();
-            return $"{type}/{Key.ToStringUtf8()}";
+            return $"{Type.ToStringUtf8()}/{Key.ToStringUtf8()}";
         }
 
         private static void ThrowInvalidGrainId(string value) => throw new ArgumentException($"Unable to parse \"{value}\" as a grain id");
@@ -179,5 +181,13 @@ namespace Orleans.Runtime
             /// <inheritdoc/>
             public int GetHashCode(GrainId obj) => obj.GetHashCode();
         }
+    }
+
+    // Serialize to string
+    public class GrainIdJsonConverter : JsonConverter<GrainId>
+    {
+        public override GrainId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => GrainId.Parse(reader.GetString());
+
+        public override void Write(Utf8JsonWriter writer, GrainId value, JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
     }
 }

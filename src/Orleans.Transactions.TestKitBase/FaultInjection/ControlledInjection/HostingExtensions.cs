@@ -1,8 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -16,14 +12,6 @@ namespace Orleans.Transactions.TestKit
 {
     public static class SiloBuilderExtensions
     {
-        /// <summary>
-        /// Configure cluster to use the distributed TM algorithm
-        /// </summary>
-        public static ISiloHostBuilder UseControlledFaultInjectionTransactionState(this ISiloHostBuilder builder)
-        {
-            return builder.ConfigureServices(services => services.UseControlledFaultInjectionTransactionState());
-        }
-
         /// <summary>
         /// Configure cluster to use the distributed TM algorithm
         /// </summary>
@@ -43,19 +31,9 @@ namespace Orleans.Transactions.TestKit
             return services;
         }
 
-        public static ISiloHostBuilder AddFaultInjectionAzureTableTransactionalStateStorage(this ISiloHostBuilder builder, Action<AzureTableTransactionalStateOptions> configureOptions)
-        {
-            return builder.AddFaultInjectionAzureTableTransactionalStateStorage(ProviderConstants.DEFAULT_STORAGE_PROVIDER_NAME, configureOptions);
-        }
-
         public static ISiloBuilder AddFaultInjectionAzureTableTransactionalStateStorage(this ISiloBuilder builder, Action<AzureTableTransactionalStateOptions> configureOptions)
         {
             return builder.AddFaultInjectionAzureTableTransactionalStateStorage(ProviderConstants.DEFAULT_STORAGE_PROVIDER_NAME, configureOptions);
-        }
-
-        public static ISiloHostBuilder AddFaultInjectionAzureTableTransactionalStateStorage(this ISiloHostBuilder builder, string name, Action<AzureTableTransactionalStateOptions> configureOptions)
-        {
-            return builder.ConfigureServices(services => services.AddFaultInjectionAzureTableTransactionalStateStorage(name, ob => ob.Configure(configureOptions)));
         }
 
         public static ISiloBuilder AddFaultInjectionAzureTableTransactionalStateStorage(this ISiloBuilder builder, string name, Action<AzureTableTransactionalStateOptions> configureOptions)

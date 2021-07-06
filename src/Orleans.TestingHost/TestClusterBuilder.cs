@@ -44,8 +44,6 @@ namespace Orleans.TestingHost
                 AssumeHomogenousSilosForTesting = true
             };
 
-            this.AddClientBuilderConfigurator<AddTestHooksApplicationParts>();
-            this.AddSiloBuilderConfigurator<AddTestHooksApplicationParts>();
             this.AddSiloBuilderConfigurator<ConfigureStaticClusterDeploymentOptions>();
             this.ConfigureBuilder(ConfigureDefaultPorts);
         }
@@ -87,17 +85,15 @@ namespace Orleans.TestingHost
         }
 
         /// <summary>
-        /// Adds an implementation of <see cref="ISiloConfigurator"/>, <see cref="IHostConfigurator"/>, or <see cref="ISiloBuilderConfigurator"/> to configure silos created by the test cluster.
+        /// Adds an implementation of <see cref="ISiloConfigurator"/> or <see cref="IHostConfigurator"/> to configure silos created by the test cluster.
         /// </summary>
         /// <typeparam name="T">The configurator type.</typeparam>
         public TestClusterBuilder AddSiloBuilderConfigurator<T>() where T : new()
         {
-#pragma warning disable CS0618 // Type or member is obsolete
-            if (!typeof(ISiloConfigurator).IsAssignableFrom(typeof(T)) && !typeof(IHostConfigurator).IsAssignableFrom(typeof(T)) && !typeof(ISiloBuilderConfigurator).IsAssignableFrom(typeof(T)))
+            if (!typeof(ISiloConfigurator).IsAssignableFrom(typeof(T)) && !typeof(IHostConfigurator).IsAssignableFrom(typeof(T)))
             {
-                throw new ArgumentException($"The type {typeof(T)} is not assignable to either {nameof(ISiloConfigurator)}, {nameof(IHostConfigurator)}, or {nameof(ISiloBuilderConfigurator)}.");
+                throw new ArgumentException($"The type {typeof(T)} is not assignable to either {nameof(ISiloConfigurator)} or {nameof(IHostConfigurator)}");
             }
-#pragma warning restore CS0618 // Type or member is obsolete
 
             this.Options.SiloBuilderConfiguratorTypes.Add(typeof(T).AssemblyQualifiedName);
             return this;
@@ -151,19 +147,6 @@ namespace Orleans.TestingHost
             (int baseSiloPort, int baseGatewayPort) = this.PortAllocator.AllocateConsecutivePortPairs(this.Options.InitialSilosCount + 3);
             if (this.Options.BaseSiloPort == 0) this.Options.BaseSiloPort = baseSiloPort;
             if (this.Options.BaseGatewayPort == 0) this.Options.BaseGatewayPort = baseGatewayPort;
-        }
-
-        internal class AddTestHooksApplicationParts : IClientBuilderConfigurator, ISiloConfigurator
-        {
-            public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
-            {
-                clientBuilder.ConfigureApplicationParts(parts => parts.AddFrameworkPart(typeof(ITestHooksSystemTarget).Assembly));
-            }
-
-            public void Configure(ISiloBuilder hostBuilder)
-            {
-                hostBuilder.ConfigureApplicationParts(parts => parts.AddFrameworkPart(typeof(ITestHooksSystemTarget).Assembly));
-            }
         }
 
         internal class ConfigureStaticClusterDeploymentOptions : ISiloConfigurator

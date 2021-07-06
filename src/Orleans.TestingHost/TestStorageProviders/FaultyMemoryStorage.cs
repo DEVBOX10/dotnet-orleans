@@ -1,17 +1,15 @@
 
 using System;
-using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Runtime;
-using Orleans.Runtime.Configuration;
 using Orleans.Storage;
 
 namespace Orleans.TestingHost
 {
-    public static class SiloHostBuilderExtensions
+    public static class SiloBuilderExtensions
     {
         /// <summary>
         /// Configure silo to use FaultInjectionMemoryStorage
@@ -27,26 +25,6 @@ namespace Orleans.TestingHost
         /// Configure silo to use FaultInjectionMemoryStorage
         /// </summary>
         public static ISiloBuilder AddFaultInjectionMemoryStorage(this ISiloBuilder builder, string name, Action<OptionsBuilder<MemoryGrainStorageOptions>> configureOptions = null,
-            Action<OptionsBuilder<FaultInjectionGrainStorageOptions>> configureFaultInjecitonOptions = null)
-        {
-            return builder.ConfigureServices(services => services.AddFaultInjectionMemoryStorage(name,
-               configureOptions, configureFaultInjecitonOptions));
-        }
-
-        /// <summary>
-        /// Configure silo to use FaultInjectionMemoryStorage
-        /// </summary>
-        public static ISiloHostBuilder AddFaultInjectionMemoryStorage(this ISiloHostBuilder builder, string name, Action<MemoryGrainStorageOptions> configureOptions,
-            Action<FaultInjectionGrainStorageOptions> configureFaultInjecitonOptions)
-        {
-            return builder.ConfigureServices(services => services.AddFaultInjectionMemoryStorage(name,
-                ob => ob.Configure(configureOptions), faultOb => faultOb.Configure(configureFaultInjecitonOptions)));
-        }
-
-        /// <summary>
-        /// Configure silo to use FaultInjectionMemoryStorage
-        /// </summary>
-        public static ISiloHostBuilder AddFaultInjectionMemoryStorage(this ISiloHostBuilder builder, string name, Action<OptionsBuilder<MemoryGrainStorageOptions>> configureOptions = null,
             Action<OptionsBuilder<FaultInjectionGrainStorageOptions>> configureFaultInjecitonOptions = null)
         {
             return builder.ConfigureServices(services => services.AddFaultInjectionMemoryStorage(name,

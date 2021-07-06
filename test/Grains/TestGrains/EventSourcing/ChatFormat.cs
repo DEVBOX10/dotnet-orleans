@@ -1,10 +1,5 @@
-﻿using Orleans.Serialization;
 using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace TestGrains
@@ -18,7 +13,7 @@ namespace TestGrains
     {
         public static void Initialize(this XDocument document, DateTime timestamp, string origin)
         {
-            if (document.Nodes().Count() == 0)
+            if (!document.Nodes().Any())
             {
                 document.Add(new XComment($"This chat room was created by {origin}"));
                 document.Add(new XElement("root",
@@ -29,7 +24,7 @@ namespace TestGrains
 
         public static XElement GetPostsContainer(this XDocument document)
         {
-            return document.Element("root").Element("posts");
+            return document.Elements().Single(x => x.Name.LocalName == "root").Elements().Single(x => x.Name.LocalName == "posts");
         }
 
         public static XElement MakePost(Guid guid, string user, DateTime timestamp, string text)

@@ -8,7 +8,6 @@ using Orleans.AzureUtils;
 using Orleans.Configuration;
 using Orleans.Runtime;
 using Orleans.TestingHost.Utils;
-using TestExtensions;
 using Xunit;
 
 namespace Tester.AzureUtils
@@ -84,7 +83,7 @@ namespace Tester.AzureUtils
             AzureQueueDataManager manager = await GetTableManager(queueName);
 
             IEnumerable<QueueMessage> msgs = await manager.GetQueueMessages();
-            Assert.True(msgs == null || msgs.Count() == 0);
+            Assert.True(msgs == null || !msgs.Any());
 
             int numMsgs = 10;
             List<Task> promises = new List<Task>();
@@ -118,7 +117,7 @@ namespace Tester.AzureUtils
 
             for (int i = 0; i < NumThreads; i++)
             {
-                promises[i] = Task.Run<bool>(async () =>
+                promises[i] = Task.Run(async () =>
                 {
                     AzureQueueDataManager manager = await GetTableManager(queueName);
                     return true;

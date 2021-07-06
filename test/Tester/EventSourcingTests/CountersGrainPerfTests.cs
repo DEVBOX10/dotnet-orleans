@@ -1,14 +1,9 @@
 ﻿using System;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Linq;
-using Orleans;
 using TestGrainInterfaces;
 using Xunit;
-using Assert = Xunit.Assert;
-using TestExtensions;
 using Xunit.Abstractions;
-using Orleans.Runtime;
 using System.Collections.Generic;
 using Xunit.Sdk;
 
@@ -109,7 +104,7 @@ namespace Tester.EventSourcingTests
 
         private bool HasRunThisFirstAttribute(ITestCase testcase)
         {
-            return testcase.TestMethod.Method.GetCustomAttributes(attrname).Count() > 0;
+            return testcase.TestMethod.Method.GetCustomAttributes(attrname).Any();
         }
 
         public IEnumerable<TTestCase> OrderTestCases<TTestCase>(IEnumerable<TTestCase> testCases) where TTestCase : ITestCase
