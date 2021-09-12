@@ -1,7 +1,5 @@
 using System;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Orleans.Configuration;
 using Orleans.Core;
 using Orleans.Timers;
 using Orleans.Storage;
@@ -10,7 +8,6 @@ namespace Orleans.Runtime
 {
     internal class GrainRuntime : IGrainRuntime
     {
-        private readonly InsideRuntimeClient runtimeClient;
         private readonly ILoggerFactory loggerFactory;
         private readonly IServiceProvider serviceProvider;
         private readonly IReminderRegistry reminderRegistry;
@@ -18,17 +15,13 @@ namespace Orleans.Runtime
         private readonly IGrainFactory grainFactory;
 
         public GrainRuntime(
-            IOptions<ClusterOptions> clusterOptions,
             ILocalSiloDetails localSiloDetails,
             IGrainFactory grainFactory,
             ITimerRegistry timerRegistry,
             IReminderRegistry reminderRegistry,
             IServiceProvider serviceProvider,
-            InsideRuntimeClient runtimeClient,
             ILoggerFactory loggerFactory)
         {
-            this.runtimeClient = runtimeClient;
-            ServiceId = clusterOptions.Value.ServiceId;
             SiloAddress = localSiloDetails.SiloAddress;
             SiloIdentity = SiloAddress.ToLongString();
             this.grainFactory = grainFactory;
@@ -37,8 +30,6 @@ namespace Orleans.Runtime
             this.serviceProvider = serviceProvider;
             this.loggerFactory = loggerFactory;
         }
-
-        public string ServiceId { get; }
 
         public string SiloIdentity { get; }
 
@@ -83,7 +74,7 @@ namespace Orleans.Runtime
         public void DeactivateOnIdle(Grain grain)
         {
             CheckRuntimeContext();
-            this.runtimeClient.DeactivateOnIdle(grain.Data.ActivationId);
+            grain.Data.Deactivate();
         }
 
         public void DelayDeactivation(Grain grain, TimeSpan timeSpan)
@@ -101,7 +92,7 @@ namespace Orleans.Runtime
 
         public static void CheckRuntimeContext()
         {
-            var context = RuntimeContext.CurrentGrainContext;
+            var context = RuntimeContext.Current;
 
             if (context is null)
             {

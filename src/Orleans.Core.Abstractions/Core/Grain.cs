@@ -20,7 +20,7 @@ namespace Orleans
         internal IActivationData Data;
         public GrainReference GrainReference { get { return Data.GrainReference; } }
 
-        internal IGrainRuntime Runtime { get; set; }
+        internal IGrainRuntime Runtime { get; }
         /// <summary>
         /// Gets an object which can be used to access other grains. Null if this grain is not associated with a Runtime, such as when created directly for unit testing.
         /// </summary>
@@ -45,7 +45,7 @@ namespace Orleans
         /// </summary>
         protected Grain()
         {
-            var context = RuntimeContext.CurrentGrainContext;
+            var context = RuntimeContext.Current;
             if (context is null)
             {
                 return;
@@ -58,7 +58,7 @@ namespace Orleans
             }
 
             this.Data = data;
-            this.Runtime = data.Runtime;
+            this.Runtime = data.GrainRuntime;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

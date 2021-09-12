@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -89,6 +90,12 @@ namespace Orleans.Runtime
 
         IGrainLifecycle IGrainContext.ObservableLifecycle => throw new NotImplementedException("IGrainContext.ObservableLifecycle is not implemented by SystemTarget");
 
+        public IWorkItemScheduler Scheduler => WorkItemGroup;
+
+        public bool IsExemptFromCollection => true;
+
+        public PlacementStrategy PlacementStrategy => null;
+
         public TComponent GetComponent<TComponent>()
         {
             TComponent result;
@@ -148,12 +155,17 @@ namespace Orleans.Runtime
         /// <param name="name"></param>
         /// <returns></returns>
         public IDisposable RegisterTimer(Func<object, Task> asyncCallback, object state, TimeSpan dueTime, TimeSpan period, string name = null)
+            => RegisterGrainTimer(asyncCallback, state, dueTime, period, name);
+
+        /// <summary>
+        /// Internal version of <see cref="RegisterTimer(Func{object, Task}, object, TimeSpan, TimeSpan, string)"/> that returns the inner IGrainTimer
+        /// </summary>
+        internal IGrainTimer RegisterGrainTimer(Func<object, Task> asyncCallback, object state, TimeSpan dueTime, TimeSpan period, string name = null)
         {
-            var ctxt = RuntimeContext.CurrentGrainContext;
-            this.RuntimeClient.Scheduler.CheckSchedulingContextValidity(ctxt);
+            var ctxt = RuntimeContext.Current;
             name = name ?? ctxt.GrainId + "Timer";
 
-            var timer = GrainTimer.FromTaskCallback(this.RuntimeClient.Scheduler, this.timerLogger, asyncCallback, state, dueTime, period, name);
+            var timer = GrainTimer.FromTaskCallback(this.timerLogger, asyncCallback, state, dueTime, period, name);
             timer.Start();
             return timer;
         }
@@ -262,5 +274,8 @@ namespace Orleans.Runtime
         }
 
         public TTarget GetTarget<TTarget>() => (TTarget)(object)this;
+        public void Activate(Dictionary<string, object> requestContext, CancellationToken? cancellationToken = null) { }
+        public void Deactivate(CancellationToken? cancellationToken = null) { }
+        public Task Deactivated => Task.CompletedTask;
     }
 }

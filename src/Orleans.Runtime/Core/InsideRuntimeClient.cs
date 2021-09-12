@@ -18,6 +18,7 @@ using Orleans.Configuration;
 using Orleans.GrainReferences;
 using Orleans.Metadata;
 using Orleans.Serialization.Invocation;
+using Orleans.Runtime.Messaging;
 
 namespace Orleans.Runtime
 {
@@ -36,13 +37,12 @@ namespace Orleans.Runtime
         private readonly SharedCallbackData systemSharedCallbackData;
         private SafeTimer callbackTimer;
 
-        private ILocalGrainDirectory directory;
+        private GrainLocator grainLocator;
         private Catalog catalog;
-        private Dispatcher dispatcher;
+        private MessageCenter messageCenter;
         private List<IIncomingGrainCallFilter> grainCallFilters;
         private DeepCopier _deepCopier;
         private readonly InterfaceToImplementationMappingCache interfaceToImplementationMapping;
-        private Serializer _serializer;
         private HostedClient hostedClient;
 
         private HostedClient HostedClient => this.hostedClient ?? (this.hostedClient = this.ServiceProvider.GetRequiredService<HostedClient>());
@@ -54,7 +54,6 @@ namespace Orleans.Runtime
 
         public InsideRuntimeClient(
             ILocalSiloDetails siloDetails,
-            OrleansTaskScheduler scheduler,
             IServiceProvider serviceProvider,
             MessageFactory messageFactory,
             ILoggerFactory loggerFactory,
@@ -64,18 +63,15 @@ namespace Orleans.Runtime
             GrainReferenceActivator referenceActivator,
             GrainInterfaceTypeResolver interfaceIdResolver,
             GrainInterfaceTypeToGrainTypeResolver interfaceToTypeResolver,
-            Serializer serializer,
             DeepCopier deepCopier)
         {
             this.interfaceToImplementationMapping = new InterfaceToImplementationMappingCache();
-            this._serializer = serializer;
             this._deepCopier = deepCopier;
             this.ServiceProvider = serviceProvider;
             this.MySilo = siloDetails.SiloAddress;
             this.disposables = new List<IDisposable>();
             this.callbacks = new ConcurrentDictionary<(GrainId, CorrelationId), CallbackData>();
             this.messageFactory = messageFactory;
-            this.Scheduler = scheduler;
             this.ConcreteGrainFactory = new GrainFactory(this, referenceActivator, interfaceIdResolver, interfaceToTypeResolver);
             this.logger = loggerFactory.CreateLogger<InsideRuntimeClient>();
             this.invokeExceptionLogger = loggerFactory.CreateLogger($"{typeof(Grain).FullName}.InvokeException");
@@ -102,8 +98,6 @@ namespace Orleans.Runtime
 
         public IServiceProvider ServiceProvider { get; }
 
-        public OrleansTaskScheduler Scheduler { get; }
-
         public IInternalGrainFactory InternalGrainFactory => this.ConcreteGrainFactory;
 
         private SiloAddress MySilo { get; }
@@ -112,13 +106,13 @@ namespace Orleans.Runtime
         
         private Catalog Catalog => this.catalog ?? (this.catalog = this.ServiceProvider.GetRequiredService<Catalog>());
 
-        private ILocalGrainDirectory Directory
-            => this.directory ?? (this.directory = this.ServiceProvider.GetRequiredService<ILocalGrainDirectory>());
+        private GrainLocator GrainLocator
+            => this.grainLocator ?? (this.grainLocator = this.ServiceProvider.GetRequiredService<GrainLocator>());
 
         private List<IIncomingGrainCallFilter> GrainCallFilters
             => this.grainCallFilters ?? (this.grainCallFilters = new List<IIncomingGrainCallFilter>(this.ServiceProvider.GetServices<IIncomingGrainCallFilter>()));
 
-        private Dispatcher Dispatcher => this.dispatcher ?? (this.dispatcher = this.ServiceProvider.GetRequiredService<Dispatcher>());
+        private MessageCenter MessageCenter => this.messageCenter ?? (this.messageCenter = this.ServiceProvider.GetRequiredService<MessageCenter>());
 
         public IGrainReferenceRuntime GrainReferenceRuntime => this.grainReferenceRuntime ?? (this.grainReferenceRuntime = this.ServiceProvider.GetRequiredService<IGrainReferenceRuntime>());
 
@@ -136,7 +130,7 @@ namespace Orleans.Runtime
             if (message.SendingSilo == null)
                 message.SendingSilo = MySilo;
 
-            IGrainContext sendingActivation = RuntimeContext.CurrentGrainContext;
+            IGrainContext sendingActivation = RuntimeContext.Current;
 
             if (sendingActivation == null)
             {
@@ -189,7 +183,7 @@ namespace Orleans.Runtime
             }
 
             this.messagingTrace.OnSendRequest(message);
-            this.Dispatcher.SendMessage(message, sendingActivation);
+            this.MessageCenter.AddressAndSendMessage(message);
         }
 
         public void SendResponse(Message request, Response response)
@@ -203,7 +197,7 @@ namespace Orleans.Runtime
                 return;
             }
 
-            this.Dispatcher.SendResponse(request, response);
+            this.MessageCenter.SendResponse(request, response);
         }
 
         /// <summary>
@@ -222,7 +216,7 @@ namespace Orleans.Runtime
                 {
                     foreach (ActivationAddress address in message.CacheInvalidationHeader)
                     {
-                        this.Directory.InvalidateCacheEntry(address);
+                        GrainLocator.InvalidateCache(address);
                     }
                 }
 
@@ -320,7 +314,7 @@ namespace Orleans.Runtime
                         ise.IsSourceActivation = false;
 
                         this.invokeExceptionLogger.Info($"Deactivating {target} due to inconsistent state.");
-                        this.DeactivateOnIdle(target.ActivationId);
+                        this.DeactivateOnIdle(target.GrainId);
                     }
                 }
 
@@ -430,7 +424,7 @@ namespace Orleans.Runtime
                 {
                     // gatewayed message - gateway back to sender
                     if (logger.IsEnabled(LogLevel.Trace)) this.logger.Trace(ErrorCode.Dispatcher_NoCallbackForRejectionResp, "No callback for rejection response message: {0}", message);
-                    this.Dispatcher.SendMessage(message).Ignore();
+                    this.MessageCenter.AddressAndSendMessage(message);
                     return;
                 }
 
@@ -449,9 +443,9 @@ namespace Orleans.Runtime
                         if (message.CacheInvalidationHeader == null)
                         {
                             // Remove from local directory cache. Note that SendingGrain is the original target, since message is the rejection response.
-                            // If CacheMgmtHeader is present, we already did this. Otherwise, we left this code for backward compatability. 
+                            // If CacheInvalidationHeader is present, we already did this. Otherwise, we left this code for backward compatability. 
                             // It should be retired as we move to use CacheMgmtHeader in all relevant places.
-                            this.Directory.InvalidateCacheEntry(message.SendingAddress);
+                            this.GrainLocator.InvalidateCache(message.SendingAddress);
                         }
                         break;
 
@@ -505,11 +499,7 @@ namespace Orleans.Runtime
             }
         }
 
-        public string CurrentActivationIdentity => RuntimeContext.CurrentGrainContext?.Address.ToString() ?? this.HostedClient.ToString();
-
-        public void Reset(bool cleanup)
-        {
-        }
+        public string CurrentActivationIdentity => RuntimeContext.Current?.Address.ToString() ?? this.HostedClient.ToString();
 
         /// <inheritdoc />
         public TimeSpan GetResponseTimeout() => this.sharedCallbackData.ResponseTimeout;
@@ -519,13 +509,13 @@ namespace Orleans.Runtime
 
         public IAddressable CreateObjectReference(IAddressable obj)
         {
-            if (RuntimeContext.CurrentGrainContext is null) return this.HostedClient.CreateObjectReference(obj);
+            if (RuntimeContext.Current is null) return this.HostedClient.CreateObjectReference(obj);
             throw new InvalidOperationException("Cannot create a local object reference from a grain.");
         }
 
         public void DeleteObjectReference(IAddressable obj)
         {
-            if (RuntimeContext.CurrentGrainContext is null)
+            if (RuntimeContext.Current is null)
             {
                 this.HostedClient.DeleteObjectReference(obj);
             }
@@ -535,13 +525,10 @@ namespace Orleans.Runtime
             }
         }
 
-        public void DeactivateOnIdle(ActivationId id)
+        public void DeactivateOnIdle(GrainId id)
         {
-            ActivationData data;
-            if (!Catalog.TryGetActivationData(id, out data)) return; // already gone
-
-            data.ResetKeepAliveRequest(); // DeactivateOnIdle method would undo / override any current “keep alive” setting, making this grain immideately avaliable for deactivation.
-            Catalog.DeactivateActivationOnIdle(data);
+            if (!Catalog.TryGetActivationData(id, out var data)) return; // already gone
+            _ = data.DeactivateAsync();
         }
 
         private Task OnRuntimeInitializeStop(CancellationToken tc)

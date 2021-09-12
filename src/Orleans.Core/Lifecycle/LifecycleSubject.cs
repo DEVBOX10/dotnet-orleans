@@ -18,13 +18,13 @@ namespace Orleans
     /// - OnStop stops states in reverse order starting from highest started stage.
     /// - OnStop stops all stages regardless of errors even if canceled canceled.
     /// </summary>
-    public class LifecycleSubject : ILifecycleSubject
+    public abstract class LifecycleSubject : ILifecycleSubject
     {
         private readonly List<OrderedObserver> subscribers;
         private readonly ILogger logger;
         private int? highStage = null;
 
-        public LifecycleSubject(ILogger<LifecycleSubject> logger)
+        protected LifecycleSubject(ILogger logger)
         {
             this.logger = logger;
             this.subscribers = new List<OrderedObserver>();
@@ -145,7 +145,7 @@ namespace Orleans
             var loggedCancellation = false;
             foreach (IGrouping<int, OrderedObserver> observerGroup in this.subscribers
                 // include up to highest started stage
-                .Where(orderedObserver => orderedObserver.Stage <= highStage)
+                .Where(orderedObserver => orderedObserver.Stage <= highStage && orderedObserver.Observer != null)
                 .GroupBy(orderedObserver => orderedObserver.Stage)
                 .OrderByDescending(group => group.Key))
             {

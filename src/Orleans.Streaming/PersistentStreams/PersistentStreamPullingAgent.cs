@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -25,16 +26,17 @@ namespace Orleans.Streams
         private readonly ILogger logger;
         private readonly CounterStatistic numReadMessagesCounter;
         private readonly CounterStatistic numSentMessagesCounter;
-        private int numMessages;
-
+        private readonly IQueueAdapterCache queueAdapterCache;
         private readonly IQueueAdapter queueAdapter;
         private readonly IStreamFailureHandler streamFailureHandler;
+        internal readonly QueueId QueueId;
+
+        private int numMessages;
         private IQueueCache queueCache;
         private IQueueAdapterReceiver receiver;
         private DateTime lastTimeCleanedPubSubCache;
-        private IDisposable timer;
+        private IGrainTimer timer;
 
-        internal readonly QueueId QueueId;
         private Task receiverInitTask;
         private bool IsShutdown => timer == null;
         private string StatisticUniquePostfix => streamProviderName + "." + QueueId;
@@ -63,6 +65,7 @@ namespace Orleans.Streams
             this.options = options;
             this.queueAdapter = queueAdapter ?? throw new ArgumentNullException(nameof(queueAdapter));
             this.streamFailureHandler = streamFailureHandler ?? throw new ArgumentNullException(nameof(streamFailureHandler)); ;
+            this.queueAdapterCache = queueAdapterCache;
             numMessages = 0;
 
             logger = loggerFactory.CreateLogger($"{this.GetType().Namespace}.{streamProviderName}");
@@ -71,31 +74,6 @@ namespace Orleans.Streams
                 GetType().Name, ((ISystemTargetBase)this).GrainId.ToString(), streamProviderName, Silo, QueueId.ToStringWithHashCode());
             numReadMessagesCounter = CounterStatistic.FindOrCreate(new StatisticName(StatisticNames.STREAMS_PERSISTENT_STREAM_NUM_READ_MESSAGES, StatisticUniquePostfix));
             numSentMessagesCounter = CounterStatistic.FindOrCreate(new StatisticName(StatisticNames.STREAMS_PERSISTENT_STREAM_NUM_SENT_MESSAGES, StatisticUniquePostfix));
-            // TODO: move queue cache size statistics tracking into queue cache implementation once Telemetry APIs and LogStatistics have been reconciled.
-            //IntValueStatistic.FindOrCreate(new StatisticName(StatisticNames.STREAMS_PERSISTENT_STREAM_QUEUE_CACHE_SIZE, statUniquePostfix), () => queueCache != null ? queueCache.Size : 0);
-
-            try
-            {
-                receiver = queueAdapter.CreateReceiver(QueueId);
-            }
-            catch (Exception exc)
-            {
-                logger.Error(ErrorCode.PersistentStreamPullingAgent_02, "Exception while calling IQueueAdapter.CreateNewReceiver.", exc);
-                throw;
-            }
-
-            try
-            {
-                if (queueAdapterCache != null)
-                {
-                    queueCache = queueAdapterCache.CreateQueueCache(QueueId);
-                }
-            }
-            catch (Exception exc)
-            {
-                logger.Error(ErrorCode.PersistentStreamPullingAgent_23, "Exception while calling IQueueAdapterCache.CreateQueueCache.", exc);
-                throw;
-            }
         }
 
         /// <summary>
@@ -123,6 +101,29 @@ namespace Orleans.Streams
 
             try
             {
+                if (queueAdapterCache != null)
+                {
+                    queueCache = queueAdapterCache.CreateQueueCache(QueueId);
+                }
+            }
+            catch (Exception exc)
+            {
+                logger.Error(ErrorCode.PersistentStreamPullingAgent_23, "Exception while calling IQueueAdapterCache.CreateQueueCache.", exc);
+                throw;
+            }
+
+            try
+            {
+                receiver = queueAdapter.CreateReceiver(QueueId);
+            }
+            catch (Exception exc)
+            {
+                logger.Error(ErrorCode.PersistentStreamPullingAgent_02, "Exception while calling IQueueAdapter.CreateNewReceiver.", exc);
+                throw;
+            }
+
+            try
+            {
                 receiverInitTask = OrleansTaskExtentions.SafeExecute(() => receiver.Initialize(this.options.InitQueueTimeout))
                     .LogException(logger, ErrorCode.PersistentStreamPullingAgent_03, $"QueueAdapterReceiver {QueueId.ToStringWithHashCode()} failed to Initialize.");
                 receiverInitTask.Ignore();
@@ -136,7 +137,7 @@ namespace Orleans.Streams
             // Setup a reader for a new receiver. 
             // Even if the receiver failed to initialise, treat it as OK and start pumping it. It's receiver responsibility to retry initialization.
             var randomTimerOffset = ThreadSafeRandom.NextTimeSpan(this.options.GetQueueMsgsTimerPeriod);
-            timer = RegisterTimer(AsyncTimerCallback, QueueId, randomTimerOffset, this.options.GetQueueMsgsTimerPeriod);
+            timer = RegisterGrainTimer(AsyncTimerCallback, QueueId, randomTimerOffset, this.options.GetQueueMsgsTimerPeriod);
 
             IntValueStatistic.FindOrCreate(new StatisticName(StatisticNames.STREAMS_PERSISTENT_STREAM_PUBSUB_CACHE_SIZE, StatisticUniquePostfix), () => pubSubCache.Count);
 
@@ -150,9 +151,18 @@ namespace Orleans.Streams
 
             if (timer != null)
             {
-                IDisposable tmp = timer;
+                var tmp = timer;
                 timer = null;
                 Utils.SafeExecute(tmp.Dispose, this.logger);
+
+                try
+                {
+                    await tmp.GetCurrentlyExecutingTickTask().WithTimeout(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception ex)
+                {
+                    this.logger.LogWarning(ex, "Waiting for the last timer tick failed");
+                }
             }
 
             this.queueCache = null;
@@ -271,6 +281,7 @@ namespace Orleans.Streams
                     requestedHandshakeToken = await AsyncExecutorWithRetries.ExecuteWithRetries(
                          i => consumerData.StreamConsumer.GetSequenceToken(consumerData.SubscriptionId),
                          AsyncExecutorWithRetries.INFINITE_RETRIES,
+                         // Do not retry if the agent is shutting down, or if the exception is ClientNotAvailableException
                          (exception, i) => exception is not ClientNotAvailableException && !IsShutdown,
                          this.options.MaxEventDeliveryTime,
                          DeliveryBackoffProvider);
@@ -292,6 +303,9 @@ namespace Orleans.Streams
                 }
                 if (exceptionOccured != null)
                 {
+                    // If we are shutting down, ignore the error
+                    if (IsShutdown) return false;
+
                     bool faultedSubscription = await ErrorProtocol(consumerData, exceptionOccured, false, null, requestedHandshakeToken?.Token);
                     if (faultedSubscription) return false;
                 }

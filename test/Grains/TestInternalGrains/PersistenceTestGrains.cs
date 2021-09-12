@@ -134,6 +134,8 @@ namespace UnitTests.Grains
     [Orleans.Providers.StorageProvider(ProviderName = "ErrorInjector")]
     public class PersistenceProviderErrorGrain : Grain<PersistenceTestGrainState>, IPersistenceProviderErrorGrain
     {
+        private readonly string _id = Guid.NewGuid().ToString();
+
         public override Task OnActivateAsync()
         {
             return Task.CompletedTask;
@@ -156,7 +158,7 @@ namespace UnitTests.Grains
             return State.Field1;
         }
 
-        public Task<string> GetActivationId() => Task.FromResult(this.Data.ActivationId.ToString());
+        public Task<string> GetActivationId() => Task.FromResult(_id);
     }
 
     [Orleans.Providers.StorageProvider(ProviderName = "ErrorInjector")]
@@ -213,13 +215,15 @@ namespace UnitTests.Grains
 
     public class PersistenceProviderErrorProxyGrain : Grain, IPersistenceProviderErrorProxyGrain
     {
+        private readonly string _id = Guid.NewGuid().ToString();
+
         public Task<int> GetValue(IPersistenceProviderErrorGrain other) => other.GetValue();
 
         public Task DoWrite(int val, IPersistenceProviderErrorGrain other) => other.DoWrite(val);
 
         public Task<int> DoRead(IPersistenceProviderErrorGrain other) => other.DoRead();
 
-        public Task<string> GetActivationId() => Task.FromResult(this.Data.ActivationId.ToString());
+        public Task<string> GetActivationId() => Task.FromResult(_id);
     }
 
     [Orleans.Providers.StorageProvider(ProviderName = "test1")]
@@ -432,6 +436,8 @@ namespace UnitTests.Grains
     public class AWSStorageTestGrain : Grain<PersistenceTestGrainState>,
         IAWSStorageTestGrain, IAWSStorageTestGrain_LongKey
     {
+        private readonly string _id = Guid.NewGuid().ToString();
+
         public override Task OnActivateAsync()
         {
             return Task.CompletedTask;
@@ -454,7 +460,7 @@ namespace UnitTests.Grains
             return State.Field1;
         }
 
-        public Task<string> GetActivationId() => Task.FromResult(this.Data.ActivationId.ToString());
+        public Task<string> GetActivationId() => Task.FromResult(_id);
 
         public Task DoDelete()
         {
@@ -709,7 +715,7 @@ namespace UnitTests.Grains
 
         public override Task OnActivateAsync()
         {
-            _context = RuntimeContext.CurrentGrainContext;
+            _context = RuntimeContext.Current;
             _scheduler = TaskScheduler.Current;
             executing = false;
             return base.OnActivateAsync();
@@ -854,7 +860,7 @@ namespace UnitTests.Grains
                 //Environment.Exit(1);
             }
 
-            if (RuntimeContext.CurrentGrainContext == null)
+            if (RuntimeContext.Current == null)
             {
                 var errorMsg = "Found RuntimeContext.Current == null.\n" + TestRuntimeEnvironmentUtility.CaptureRuntimeEnvironment();
                 this.logger.Error(1, "\n\n\n\n" + errorMsg + "\n\n\n\n");
@@ -862,7 +868,7 @@ namespace UnitTests.Grains
                 //Environment.Exit(1);
             }
 
-            var context = RuntimeContext.CurrentGrainContext;
+            var context = RuntimeContext.Current;
             var scheduler = TaskScheduler.Current;
 
             executing = true;
@@ -875,7 +881,6 @@ namespace UnitTests.Grains
 
     internal class NonReentrentStressGrainWithoutState : Grain, INonReentrentStressGrainWithoutState
     {
-        private readonly OrleansTaskScheduler scheduler;
         private const int Multiple = 100;
         private ILogger logger;
         private bool executing;
@@ -884,27 +889,8 @@ namespace UnitTests.Grains
         private static int _counter = 1;
         private int _id;
 
-        // HACK for testing
-        private readonly Tuple<string, Severity>[] overridesOn =
-        {
-            new Tuple<string, Severity>("Scheduler", Severity.Verbose),
-            new Tuple<string, Severity>("Scheduler.ActivationTaskScheduler", Severity.Verbose3)
-        };
-
-        private readonly Tuple<string, Severity>[] overridesOff =
-        {
-            new Tuple<string, Severity>("Scheduler", Severity.Info),
-            new Tuple<string, Severity>("Scheduler.ActivationTaskScheduler", Severity.Info)
-        };
-        
-        public NonReentrentStressGrainWithoutState(OrleansTaskScheduler scheduler)
-        {
-            this.scheduler = scheduler;
-        }
-
         public override Task OnActivateAsync()
         {
-
             _id = _counter++;
             var loggerFactory = this.ServiceProvider?.GetService<ILoggerFactory>();
             //if grain created outside a cluster
@@ -914,10 +900,6 @@ namespace UnitTests.Grains
 
             executing = false;
             Log("--> OnActivateAsync");
-//#if DEBUG
-//            // HACK for testing
-//            Logger.SetTraceLevelOverrides(overridesOn.ToList());
-//#endif
             Log("<-- OnActivateAsync");
             return base.OnActivateAsync();
         }
@@ -1014,7 +996,6 @@ namespace UnitTests.Grains
                     TestRuntimeEnvironmentUtility.CaptureRuntimeEnvironment(),
                     callStack);
                 this.logger.Error(1, "\n\n\n\n" + errorMsg + "\n\n\n\n");
-                this.scheduler.DumpSchedulerStatus();
                 //Environment.Exit(1);
                 throw new Exception(errorMsg);
             }

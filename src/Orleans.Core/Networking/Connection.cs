@@ -29,7 +29,6 @@ namespace Orleans.Runtime.Messaging
         };
 
         private static readonly ObjectPool<MessageHandler> MessageHandlerPool = ObjectPool.Create(new MessageHandlerPoolPolicy());
-        private readonly MemoryPool<byte> memoryPool = MemoryPool<byte>.Shared;
         private readonly ConnectionCommon shared;
         private readonly ConnectionDelegate middleware;
         private readonly Channel<Message> outgoingMessages;
@@ -369,7 +368,7 @@ namespace Orleans.Runtime.Messaging
                         exception,
                         "Exception while processing messages to remote endpoint {EndPoint}",
                         this.RemoteEndPoint);
-                (serializer as IDisposable)?.Dispose();
+                    (serializer as IDisposable)?.Dispose();
                 }
 
                 error = exception;
@@ -424,7 +423,7 @@ namespace Orleans.Runtime.Messaging
                 this.LocalEndPoint);
 
             // If deserialization completely failed, rethrow the exception so that it can be handled at another level.
-            if (message?.Headers is null)
+            if (message is null)
             {
                 // Returning false here informs the caller that the exception should not be caught.
                 return false;
@@ -525,6 +524,7 @@ namespace Orleans.Runtime.Messaging
                 this.connection.OnReceivedMessage(this.message);
                 MessageHandlerPool.Return(this);
             }
+
             public void Reset()
             {
                 this.message = null;

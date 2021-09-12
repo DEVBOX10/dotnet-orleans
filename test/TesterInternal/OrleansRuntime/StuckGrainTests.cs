@@ -8,6 +8,7 @@ using Orleans.Internal;
 using TestExtensions;
 using UnitTests.GrainInterfaces;
 using Xunit;
+using System.Diagnostics;
 
 namespace UnitTests.StuckGrainTests
 {
@@ -32,11 +33,16 @@ namespace UnitTests.StuckGrainTests
                 {
                     hostBuilder.Configure<GrainCollectionOptions>(options =>
                     {
-                        options.CollectionAge = TimeSpan.FromSeconds(3);
+                        options.CollectionAge = TimeSpan.FromSeconds(2);
                         options.CollectionQuantum = TimeSpan.FromSeconds(1);
+
+                        options.DeactivationTimeout = TimeSpan.FromSeconds(2);
                     });
 
-                    hostBuilder.Configure<SiloMessagingOptions>(options => options.MaxRequestProcessingTime = TimeSpan.FromSeconds(3));
+                    hostBuilder.Configure<SiloMessagingOptions>(options =>
+                    {
+                        options.MaxRequestProcessingTime = TimeSpan.FromSeconds(3);
+                    });
                 }
             }
         }
@@ -63,7 +69,7 @@ namespace UnitTests.StuckGrainTests
             await task.WithTimeout(TimeSpan.FromSeconds(1));
 
             // wait for activation collection
-            await Task.Delay(TimeSpan.FromSeconds(6)); 
+            await Task.Delay(TimeSpan.FromSeconds(6));
 
             Assert.False(await cleaner.IsActivated(id), "Grain activation is supposed be garbage collected, but it is still running.");
         }
@@ -90,7 +96,8 @@ namespace UnitTests.StuckGrainTests
             // No issue on this one
             await stuckGrain.NonBlockingCall();
 
-            Assert.Equal(1, await stuckGrain.GetNonBlockingCallCounter());
+            // All 4 otherwise stuck calls should have been forwarded to a new activation
+            Assert.Equal(4, await stuckGrain.GetNonBlockingCallCounter());
         }
 
         [Fact, TestCategory("Functional"), TestCategory("ActivationCollection")]
@@ -112,7 +119,8 @@ namespace UnitTests.StuckGrainTests
             // No issue on this one
             await stuckGrain.NonBlockingCall();
 
-            Assert.Equal(1, await stuckGrain.GetNonBlockingCallCounter());
+            // All 4 otherwise stuck calls should have been forwarded to a new activation
+            Assert.Equal(4, await stuckGrain.GetNonBlockingCallCounter());
         }
     }
 }

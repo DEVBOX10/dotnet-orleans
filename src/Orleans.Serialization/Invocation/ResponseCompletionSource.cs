@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 
@@ -26,7 +25,17 @@ namespace Orleans.Serialization.Invocation
 
         public void SetException(Exception exception) => _core.SetException(exception);
 
-        public void SetResult(Response result) => _core.SetResult(result);
+        public void SetResult(Response result)
+        {
+            if (result.Exception is not { } exception)
+            {
+                _core.SetResult(result);
+            }
+            else
+            {
+                _core.SetException(exception);
+            }
+        }
         public void Complete(Response value) => SetResult(value);
         public void Complete() => SetResult(Response.Completed);
 
@@ -41,7 +50,7 @@ namespace Orleans.Serialization.Invocation
             {
                 if (isValid)
                 {
-                    _core.Reset();
+                    Reset();
                 }
             }
         }
@@ -57,7 +66,7 @@ namespace Orleans.Serialization.Invocation
             {
                 if (isValid)
                 {
-                    _core.Reset();
+                    Reset();
                 }
             }
         }
@@ -118,7 +127,7 @@ namespace Orleans.Serialization.Invocation
         {
             var exception = new InvalidCastException($"Cannot cast object of type {result.GetType()} to {typeof(TResult)}");
 #if NET5_0
-            ExceptionDispatchInfo.SetCurrentStackTrace(exception);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.SetCurrentStackTrace(exception);
             SetException(exception);
 #else
             try
@@ -161,7 +170,7 @@ namespace Orleans.Serialization.Invocation
             {
                 if (isValid)
                 {
-                    _core.Reset();
+                    Reset();
                 }
             }
         }
@@ -177,7 +186,7 @@ namespace Orleans.Serialization.Invocation
             {
                 if (isValid)
                 {
-                    _core.Reset();
+                    Reset();
                 }
             }
         }

@@ -42,7 +42,7 @@ namespace Orleans.Runtime.GrainDirectory
                     if (location.Silo.Equals(_localSiloAddress))
                     {
                         unadjustedResult = location;
-                        break; 
+                        break;
                     }
                 }
 
@@ -57,7 +57,20 @@ namespace Orleans.Runtime.GrainDirectory
             return null;
         }
 
-        public bool TryLocalLookup(GrainId grainId, out ActivationAddress address)
+        public Task<ActivationAddress> Register(ActivationAddress address) => throw new InvalidOperationException($"Cannot register client grain explicitly");
+
+        public Task Unregister(ActivationAddress address, UnregistrationCause cause) => throw new InvalidOperationException($"Cannot unregister client grain explicitly");
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static GrainId ThrowNotClientGrainId(GrainId grainId) => throw new InvalidOperationException($"{grainId} is not a client id");
+
+        public void CachePlacementDecision(ActivationAddress address) { }
+
+        public void InvalidateCache(GrainId grainId) { }
+
+        public void InvalidateCache(ActivationAddress address) { }
+
+        public bool TryLookupInCache(GrainId grainId, out ActivationAddress address)
         {
             if (!ClientGrainId.TryParse(grainId, out var clientGrainId))
             {
@@ -67,18 +80,11 @@ namespace Orleans.Runtime.GrainDirectory
             if (_clientDirectory.TryLocalLookup(clientGrainId.GrainId, out var addresses))
             {
                 address = SelectAddress(addresses, grainId);
-                return address is object;
+                return address is not null;
             }
 
             address = null;
             return false;
         }
-
-        public Task<ActivationAddress> Register(ActivationAddress address) => throw new InvalidOperationException($"Cannot register client grain explicitly");
-
-        public Task Unregister(ActivationAddress address, UnregistrationCause cause) => throw new InvalidOperationException($"Cannot unregister client grain explicitly");
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static GrainId ThrowNotClientGrainId(GrainId grainId) => throw new InvalidOperationException($"{grainId} is not a client id");
     }
 }

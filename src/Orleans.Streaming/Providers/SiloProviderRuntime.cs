@@ -1,7 +1,6 @@
 using System;
 using System.Threading.Tasks;
 using Orleans.Runtime.ConsistentRing;
-using Orleans.Runtime.Scheduler;
 using Orleans.Streams;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,7 +29,6 @@ namespace Orleans.Runtime.Providers
             IConsistentRingProvider consistentRingProvider,
             InsideRuntimeClient runtimeClient,
             ImplicitStreamSubscriberTable implicitStreamSubscriberTable,
-            OrleansTaskScheduler scheduler,
             ILoggerFactory loggerFactory,
             ILocalSiloDetails siloDetails,
             IGrainContextAccessor grainContextAccessor)
@@ -118,7 +116,7 @@ namespace Orleans.Runtime.Providers
         /// <inheritdoc />
         public StreamDirectory GetStreamDirectory()
         {
-            if (RuntimeContext.CurrentGrainContext is { } activation)
+            if (RuntimeContext.Current is { } activation)
             {
                 var directory = activation.GetComponent<StreamDirectory>();
                 if (directory is null)

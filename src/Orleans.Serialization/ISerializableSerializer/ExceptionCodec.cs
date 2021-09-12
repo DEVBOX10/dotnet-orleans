@@ -1,11 +1,10 @@
-﻿using Orleans.Serialization.Buffers;
+using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.Codecs;
 using Orleans.Serialization.GeneratedCodeHelpers;
 using Orleans.Serialization.Serializers;
 using Orleans.Serialization.TypeSystem;
 using Orleans.Serialization.WireProtocol;
-using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Buffers;
 using System.Collections;
@@ -18,7 +17,7 @@ namespace Orleans.Serialization.ISerializableSupport
     [RegisterSerializer]
     [RegisterCopier]
     [WellKnownAlias("Exception")]
-    public class ExceptionCodec : IFieldCodec<Exception>, IBaseCodec<Exception>, IGeneralizedCodec, IBaseCopier<Exception>
+    public class ExceptionCodec : IFieldCodec<Exception>, IBaseCodec<Exception>, IGeneralizedCodec, IGeneralizedBaseCodec, IBaseCopier<Exception>
     {
         private readonly StreamingContext _streamingContext;
         private readonly FormatterConverter _formatterConverter;
@@ -202,7 +201,7 @@ namespace Orleans.Serialization.ISerializableSupport
                 return false;
             }
 
-            if (typeof(Exception).IsAssignableFrom(type) && type.Namespace is { } ns && ns.StartsWith("System"))
+            if (typeof(Exception).IsAssignableFrom(type) && type.Namespace is { } ns && (ns.StartsWith("System") || ns.StartsWith("Microsoft")))
             {
                 return true;
             }
@@ -229,7 +228,11 @@ namespace Orleans.Serialization.ISerializableSupport
             // In order to handle null values.
             if (field.WireType == WireType.Reference)
             {
-                return ReferenceCodec.ReadReference<Exception, TInput>(ref reader, field);
+                // Discard the result of consuming the reference and always return null.
+                // We do not allow exceptions to participate in reference cycles because cycles involving InnerException are not allowed by .NET
+                // Exceptions must never form cyclic graphs via their well-known properties/fields (eg, InnerException).
+                var _ = ReferenceCodec.ReadReference<Exception, TInput>(ref reader, field);
+                return null;
             }
 
             Type valueType = field.FieldType;
@@ -307,7 +310,7 @@ namespace Orleans.Serialization.ISerializableSupport
             }
             else if (typeof(Exception).IsAssignableFrom(type))
             {
-                result = (Exception)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, type);
+                result = (Exception)Activator.CreateInstance(type);
             }
             else
             {
@@ -330,6 +333,9 @@ namespace Orleans.Serialization.ISerializableSupport
                 input.HResult,
                 _dictionaryCopier.DeepCopy(GetDataProperty(input), context));
         }
+
+        public void Serialize<TBufferWriter>(ref Writer<TBufferWriter> writer, object value) where TBufferWriter : IBufferWriter<byte> => Serialize(ref writer, (Exception)value);
+        public void Deserialize<TInput>(ref Reader<TInput> reader, object value) => Deserialize(ref reader, (Exception)value);
     }
 
     [RegisterSerializer]

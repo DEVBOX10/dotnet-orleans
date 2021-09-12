@@ -27,19 +27,17 @@ namespace Orleans.Runtime
         private readonly CachedVersionSelectorManager cachedVersionSelectorManager;
         private readonly CompatibilityDirectorManager compatibilityDirectorManager;
         private readonly VersionSelectorManager selectorManager;
-
-        private readonly IMessageCenter messageCenter;
-
+        private readonly ActivationCollector _activationCollector;
         private readonly ActivationDirectory activationDirectory;
 
-        private readonly ActivationCollector activationCollector;
+        private readonly IActivationWorkingSet activationWorkingSet;
 
         private readonly IAppEnvironmentStatistics appEnvironmentStatistics;
 
         private readonly IHostEnvironmentStatistics hostEnvironmentStatistics;
 
         private readonly IOptions<LoadSheddingOptions> loadSheddingOptions;
-
+        private readonly GrainCountStatistics _grainCountStatistics;
         private readonly Dictionary<Tuple<string,string>, IControllable> controllables;
 
         public SiloControl(
@@ -52,11 +50,13 @@ namespace Orleans.Runtime
             IServiceProvider services,
             ILoggerFactory loggerFactory,
             IMessageCenter messageCenter,
-            ActivationDirectory activationDirectory,
             ActivationCollector activationCollector,
+            ActivationDirectory activationDirectory,
+            IActivationWorkingSet activationWorkingSet,
             IAppEnvironmentStatistics appEnvironmentStatistics,
             IHostEnvironmentStatistics hostEnvironmentStatistics,
-            IOptions<LoadSheddingOptions> loadSheddingOptions)
+            IOptions<LoadSheddingOptions> loadSheddingOptions,
+            GrainCountStatistics grainCountStatistics)
             : base(Constants.SiloControlType, localSiloDetails.SiloAddress, loggerFactory)
         {
             this.localSiloDetails = localSiloDetails;
@@ -67,12 +67,13 @@ namespace Orleans.Runtime
             this.cachedVersionSelectorManager = cachedVersionSelectorManager;
             this.compatibilityDirectorManager = compatibilityDirectorManager;
             this.selectorManager = selectorManager;
-            this.messageCenter = messageCenter;
+            _activationCollector = activationCollector;
             this.activationDirectory = activationDirectory;
-            this.activationCollector = activationCollector;
+            this.activationWorkingSet = activationWorkingSet;
             this.appEnvironmentStatistics = appEnvironmentStatistics;
             this.hostEnvironmentStatistics = hostEnvironmentStatistics;
             this.loadSheddingOptions = loadSheddingOptions;
+            _grainCountStatistics = grainCountStatistics;
             this.controllables = new Dictionary<Tuple<string, string>, IControllable>();
             IEnumerable<IKeyedServiceCollection<string, IControllable>> namedIControllableCollections = services.GetServices<IKeyedServiceCollection<string, IControllable>>();
             foreach (IKeyedService<string, IControllable> keyedService in namedIControllableCollections.SelectMany(c => c.GetServices(services)))
@@ -103,7 +104,7 @@ namespace Orleans.Runtime
         public Task ForceActivationCollection(TimeSpan ageLimit)
         {
             logger.Info("ForceActivationCollection");
-            return this.catalog.CollectActivations(ageLimit);
+            return _activationCollector.CollectActivations(ageLimit);
         }
 
         public Task ForceRuntimeStatisticsCollection()
@@ -116,10 +117,9 @@ namespace Orleans.Runtime
         {
             if (logger.IsEnabled(LogLevel.Debug)) logger.Debug("GetRuntimeStatistics");
             var activationCount = this.activationDirectory.Count;
-            var recentlyUsedActivationCount = this.activationCollector.GetNumRecentlyUsed(TimeSpan.FromMinutes(10));
             var stats = new SiloRuntimeStatistics(
                 activationCount,
-                recentlyUsedActivationCount,
+                activationWorkingSet.Count,
                 this.appEnvironmentStatistics,
                 this.hostEnvironmentStatistics,
                 this.loadSheddingOptions,
@@ -142,7 +142,7 @@ namespace Orleans.Runtime
         public Task<SimpleGrainStatistic[]> GetSimpleGrainStatistics()
         {
             logger.Info("GetSimpleGrainStatistics");
-            return Task.FromResult( this.catalog.GetSimpleGrainStatistics().Select(p =>
+            return Task.FromResult( _grainCountStatistics.GetSimpleGrainStatistics().Select(p =>
                 new SimpleGrainStatistic { SiloAddress = this.localSiloDetails.SiloAddress, GrainType = p.Key, ActivationCount = (int)p.Value }).ToArray());
         }
 
@@ -196,6 +196,21 @@ namespace Orleans.Runtime
             this.selectorManager.SetSelector(interfaceType, strategy);
             this.cachedVersionSelectorManager.ResetCache();
             return Task.CompletedTask;
+        }
+
+        public Task<List<GrainId>> GetActiveGrains(GrainType grainType)
+        {
+            var results = new List<GrainId>();
+            activationDirectory.ForEachGrainId(AddIfMatch, (grainType, results));
+            return Task.FromResult(results);
+
+            static void AddIfMatch((GrainType Type, List<GrainId> Result) context, GrainId id)
+            {
+                if (id.Type.Equals(context.Type))
+                {
+                    context.Result.Add(id);
+                }
+            }
         }
     }
 }

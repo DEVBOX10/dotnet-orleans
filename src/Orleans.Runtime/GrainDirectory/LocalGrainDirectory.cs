@@ -10,11 +10,11 @@ using Orleans.GrainDirectory;
 using Orleans.Runtime.Scheduler;
 using Orleans.Configuration;
 using System.Collections.Immutable;
+using System.Runtime.Serialization;
 
 namespace Orleans.Runtime.GrainDirectory
 {
-    internal class LocalGrainDirectory :
-        ILocalGrainDirectory, ISiloStatusListener
+    internal class LocalGrainDirectory : ILocalGrainDirectory, ISiloStatusListener
     {
         private readonly AdaptiveDirectoryCacheMaintainer maintainer;
         private readonly ILogger log;
@@ -42,8 +42,6 @@ namespace Orleans.Runtime.GrainDirectory
 
         public RemoteGrainDirectory RemoteGrainDirectory { get; private set; }
         public RemoteGrainDirectory CacheValidator { get; private set; }
-
-        internal OrleansTaskScheduler Scheduler { get; private set; }
 
         internal GrainDirectoryHandoffManager HandoffManager { get; private set; }
 
@@ -79,8 +77,8 @@ namespace Orleans.Runtime.GrainDirectory
         internal readonly CounterStatistic UnregistrationsManyRemoteReceived;
 
         public LocalGrainDirectory(
+            IServiceProvider serviceProvider,
             ILocalSiloDetails siloDetails,
-            OrleansTaskScheduler scheduler,
             ISiloStatusOracle siloStatusOracle,
             IInternalGrainFactory grainFactory,
             Factory<GrainDirectoryPartition> grainDirectoryPartitionFactory,
@@ -93,21 +91,11 @@ namespace Orleans.Runtime.GrainDirectory
             var clusterId = siloDetails.ClusterId;
             MyAddress = siloDetails.SiloAddress;
 
-            Scheduler = scheduler;
             this.siloStatusOracle = siloStatusOracle;
             this.grainFactory = grainFactory;
             ClusterId = clusterId;
 
-            DirectoryCache = GrainDirectoryCacheFactory.CreateGrainDirectoryCache(grainDirectoryOptions.Value);
-            /* TODO - investigate dynamic config changes using IOptions - jbragg
-                        clusterConfig.OnConfigChange("Globals/Caching", () =>
-                        {
-                            lock (membershipCache)
-                            {
-                                DirectoryCache = GrainDirectoryCacheFactory<IReadOnlyList<Tuple<SiloAddress, ActivationId>>>.CreateGrainDirectoryCache(globalConfig);
-                            }
-                        });
-            */
+            DirectoryCache = GrainDirectoryCacheFactory.CreateGrainDirectoryCache(serviceProvider, grainDirectoryOptions.Value);
             maintainer =
                 GrainDirectoryCacheFactory.CreateGrainDirectoryCacheMaintainer(
                     this,
@@ -413,12 +401,12 @@ namespace Orleans.Runtime.GrainDirectory
                 if (status.IsTerminating())
                 {
                     // QueueAction up the "Remove" to run on a system turn
-                    Scheduler.QueueAction(() => RemoveServer(updatedSilo, status), CacheValidator);
+                    CacheValidator.Scheduler.QueueAction(() => RemoveServer(updatedSilo, status));
                 }
                 else if (status == SiloStatus.Active)      // do not do anything with SiloStatus.Starting -- wait until it actually becomes active
                 {
                     // QueueAction up the "Remove" to run on a system turn
-                    Scheduler.QueueAction(() => AddServer(updatedSilo), CacheValidator);
+                    CacheValidator.Scheduler.QueueAction(() => AddServer(updatedSilo));
                 }
             }
         }
@@ -506,7 +494,7 @@ namespace Orleans.Runtime.GrainDirectory
             if (owner == null)
             {
                 // We don't know about any other silos, and we're stopping, so throw
-                throw new InvalidOperationException("Grain directory is stopping");
+                throw new OrleansGrainDirectoryException("Grain directory is stopping");
             }
 
             if (owner.Equals(MyAddress))
@@ -714,6 +702,22 @@ namespace Orleans.Runtime.GrainDirectory
                 return false;
             }
 
+            // handle cache
+            cacheLookups.Increment();
+            var address = GetLocalCacheData(grain);
+            if (address != default)
+            {
+                result = new AddressAndTag
+                {
+                    Address = address,
+                };
+
+                if (log.IsEnabled(LogLevel.Trace)) log.Trace("LocalLookup cache {0}={1}", grain, result.Address);
+                cacheSuccesses.Increment();
+                localSuccesses.Increment();
+                return true;
+            }
+
             // check if we own the grain
             if (silo.Equals(MyAddress))
             {
@@ -732,25 +736,9 @@ namespace Orleans.Runtime.GrainDirectory
                 return true;
             }
 
-            // handle cache
-            cacheLookups.Increment();
-            var address = GetLocalCacheData(grain);
-            if (address == null)
-            {
-                if (log.IsEnabled(LogLevel.Trace)) log.Trace("TryFullLookup else {0}=null", grain);
-                result = default;
-                return false;
-            }
-
-            result = new AddressAndTag
-            {
-                Address = address,
-            };
-
-            if (log.IsEnabled(LogLevel.Trace)) log.Trace("LocalLookup cache {0}={1}", grain, result.Address);
-            cacheSuccesses.Increment();
-            localSuccesses.Increment();
-            return true;
+            if (log.IsEnabled(LogLevel.Trace)) log.Trace("TryFullLookup else {0}=null", grain);
+            result = default;
+            return false;
         }
 
         public AddressAndTag GetLocalDirectoryData(GrainId grain)
@@ -855,16 +843,14 @@ namespace Orleans.Runtime.GrainDirectory
             }
         }
 
+        public void InvalidateCacheEntry(GrainId grainId)
+        {
+            DirectoryCache.Remove(grainId);
+        }
+
         public void InvalidateCacheEntry(ActivationAddress activationAddress)
         {
-            var grainId = activationAddress.Grain;
-            var activationId = activationAddress.Activation;
-
-            // look up grainId activations
-            if (DirectoryCache.LookUp(grainId, out var entry, out _) && activationId.Equals(entry.Activation))
-            {
-                DirectoryCache.Remove(grainId);
-            }
+            DirectoryCache.Remove(activationAddress);
         }
 
         /// <summary>
@@ -971,6 +957,9 @@ namespace Orleans.Runtime.GrainDirectory
             return this.directoryMembership.MembershipCache.Contains(silo);
         }
 
+        public void CachePlacementDecision(ActivationAddress activation) => this.DirectoryCache.AddOrUpdate(activation, 0);
+        public bool TryCachedLookup(GrainId grainId, out ActivationAddress address) => (address = GetLocalCacheData(grainId)) is not null;
+
         private class DirectoryMembership
         {
             public DirectoryMembership(ImmutableList<SiloAddress> membershipRingList, ImmutableHashSet<SiloAddress> membershipCache)
@@ -981,8 +970,30 @@ namespace Orleans.Runtime.GrainDirectory
 
             public static DirectoryMembership Default { get; } = new DirectoryMembership(ImmutableList<SiloAddress>.Empty, ImmutableHashSet<SiloAddress>.Empty);
 
+
             public ImmutableList<SiloAddress> MembershipRingList { get; }
             public ImmutableHashSet<SiloAddress> MembershipCache { get; }
+        }
+    }
+
+    [Serializable]
+    [GenerateSerializer]
+    public class OrleansGrainDirectoryException : OrleansException
+    {
+        public OrleansGrainDirectoryException()
+        {
+        }
+
+        public OrleansGrainDirectoryException(string message) : base(message)
+        {
+        }
+
+        public OrleansGrainDirectoryException(string message, Exception innerException) : base(message, innerException)
+        {
+        }
+
+        protected OrleansGrainDirectoryException(SerializationInfo info, StreamingContext context) : base(info, context)
+        {
         }
     }
 }

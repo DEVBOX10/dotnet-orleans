@@ -8,6 +8,7 @@ using Orleans.Serialization.Invocation;
 using Orleans.Serialization.Serializers;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.CodeGeneration;
+using System.Text;
 
 namespace Orleans.Runtime
 {
@@ -155,6 +156,11 @@ namespace Orleans.Runtime
     /// <summary>
     /// This is the base class for all typed grain references.
     /// </summary>
+    [DefaultInvokableBaseType(typeof(ValueTask<>), typeof(Request<>))]
+    [DefaultInvokableBaseType(typeof(ValueTask), typeof(Request))]
+    [DefaultInvokableBaseType(typeof(Task<>), typeof(TaskRequest<>))]
+    [DefaultInvokableBaseType(typeof(Task), typeof(TaskRequest))]
+    [DefaultInvokableBaseType(typeof(void), typeof(VoidRequest))]
     public class GrainReference : IAddressable, IEquatable<GrainReference>
     {
         [NonSerialized]
@@ -264,14 +270,7 @@ namespace Orleans.Runtime
         /// <summary>
         /// Implemented in generated code.
         /// </summary>
-        public virtual ushort InterfaceVersion
-        {
-            get
-            {
-                throw new InvalidOperationException("Should be overridden by subclass");
-            }
-        }
-
+        public ushort InterfaceVersion => Shared.InterfaceVersion;
 
         /// <summary>
         /// Return the name of the interface for this GrainReference.
@@ -297,33 +296,19 @@ namespace Orleans.Runtime
         {
             return this.Runtime.InvokeMethodAsync<T>(this, methodId, arguments, options | _shared.InvokeMethodOptions);
         }
-    }
-
-    [DefaultInvokableBaseType(typeof(ValueTask<>), typeof(Request<>))]
-    [DefaultInvokableBaseType(typeof(ValueTask), typeof(Request))]
-    [DefaultInvokableBaseType(typeof(Task<>), typeof(TaskRequest<>))]
-    [DefaultInvokableBaseType(typeof(Task), typeof(TaskRequest))]
-    [DefaultInvokableBaseType(typeof(void), typeof(VoidRequest))]
-    public abstract class NewGrainReference : GrainReference
-    {
-        protected NewGrainReference(GrainReferenceShared shared, IdSpan key) : base(shared, key)
-        {
-        }
-
-        public override ushort InterfaceVersion => Shared.InterfaceVersion;
 
         protected TInvokable GetInvokable<TInvokable>() => ActivatorUtilities.GetServiceOrCreateInstance<TInvokable>(Shared.ServiceProvider);
-
-        protected void SendRequest(IResponseCompletionSource callback, IInvokable body)
-        {
-            var request = (RequestBase)body;
-            this.Runtime.SendRequest(this, callback, body, request.Options);
-        }
 
         protected ValueTask<T> InvokeAsync<T>(IInvokable body)
         {
             var request = (RequestBase)body;
             return this.Runtime.InvokeMethodAsync<T>(this, body, request.Options);
+        }
+
+        protected ValueTask InvokeAsync(IInvokable body)
+        {
+            var request = (RequestBase)body;
+            return this.Runtime.InvokeMethodAsync(this, body, request.Options);
         }
     }
 
@@ -354,6 +339,40 @@ namespace Orleans.Runtime
         public abstract Type[] InterfaceTypeArguments { get; }
         public abstract Type[] ParameterTypes { get; }
         public abstract MethodInfo Method { get; }
+
+        public override string ToString()
+        {
+            var result = new StringBuilder();
+            result.Append(InterfaceName);
+            if (GetTarget<object>() is { } target)
+            {
+                result.Append("[(");
+                result.Append(InterfaceName);
+                result.Append(')');
+                result.Append(target.ToString());
+                result.Append(']');
+            }
+            else
+            {
+                result.Append(InterfaceName);
+            }
+
+            result.Append('.');
+            result.Append(MethodName);
+            result.Append('(');
+            for (var n = 0; n < ArgumentCount; n++)
+            {
+                if (n > 0)
+                {
+                    result.Append(", ");
+                }
+
+                result.Append(GetArgument<object>(n));
+            }
+
+            result.Append(')');
+            return result.ToString();
+        }
     }
 
     [GenerateSerializer]

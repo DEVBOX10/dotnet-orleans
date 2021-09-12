@@ -163,7 +163,8 @@ namespace Orleans.Runtime.Management
                 tasks.Add(GetSiloControlReference(silo).GetDetailedGrainReport(grainReference.GrainId));
 
             await Task.WhenAll(tasks);
-            return tasks.Select(s => s.Result).Select(r => r.LocalActivations.Count).Sum();
+            return tasks.Select(s => s.Result).Select(CountActivations).Sum();
+            static int CountActivations(DetailedGrainReport report) => report.LocalActivation is { Length: > 0 } ? 1 : 0;
         }
 
         public async Task SetCompatibilityStrategy(CompatibilityStrategy strategy)
@@ -250,7 +251,7 @@ namespace Orleans.Runtime.Management
                 }
             }
 
-            if (grainLocator.TryLocalLookup(grainId, out var result))
+            if (grainLocator.TryLookupInCache(grainId, out var result))
             {
                 return new ValueTask<SiloAddress>(result?.Silo);
             }
@@ -347,6 +348,25 @@ namespace Orleans.Runtime.Management
         private ISiloControl GetSiloControlReference(SiloAddress silo)
         {
             return this.internalGrainFactory.GetSystemTarget<ISiloControl>(Constants.SiloControlType, silo);
+        }
+
+        public async ValueTask<List<GrainId>> GetActiveGrains(GrainType grainType)
+        {
+            var hosts = await GetHosts(true);
+            var tasks = new List<Task<List<GrainId>>>();
+            foreach (var siloAddress in hosts.Keys)
+            {
+                tasks.Add(GetSiloControlReference(siloAddress).GetActiveGrains(grainType));
+            }
+
+            await Task.WhenAll(tasks);
+            var results = new List<GrainId>();
+            foreach (var promise in tasks)
+            {
+                results.AddRange(await promise);
+            }
+
+            return results;
         }
     }
 }

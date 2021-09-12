@@ -23,9 +23,9 @@ namespace Orleans.Runtime
         private readonly TimeSpan requiredFreshness;
         // We want this to be a reference type so that we can update the values in the cache
         // without having to call AddOrUpdate, which is a nuisance
-        private class TimestampedValue
+        private class TimestampedValue : IEquatable<TimestampedValue>
         {
-            public readonly DateTime WhenLoaded;
+            public readonly CoarseStopwatch Age;
             public readonly TValue Value;
             public long Generation;
 
@@ -33,9 +33,14 @@ namespace Orleans.Runtime
             {
                 Generation = Interlocked.Increment(ref l.nextGeneration);
                 Value = v;
-                WhenLoaded = DateTime.UtcNow;
+                Age = CoarseStopwatch.StartNew();
             }
+
+            public override bool Equals(object obj) => obj is TimestampedValue value && Equals(value);
+            public bool Equals(TimestampedValue other) => ReferenceEquals(this, other) || Age == other.Age && EqualityComparer<TValue>.Default.Equals(Value, other.Value) && Generation == other.Generation;
+            public override int GetHashCode() => HashCode.Combine(Age, Value, Generation);
         }
+
         private readonly ConcurrentDictionary<TKey, TimestampedValue> cache = new();
         private int count;
 
@@ -72,7 +77,7 @@ namespace Orleans.Runtime
             {
                 added = false;
                 // if multiple values are added at once for the same key, take the newest one
-                return old.WhenLoaded >= result.WhenLoaded && old.Generation > result.Generation ? old : result;
+                return old.Age.Elapsed >= result.Age.Elapsed && old.Generation > result.Generation ? old : result;
             });
 
             if (added) Interlocked.Increment(ref count);
@@ -86,6 +91,35 @@ namespace Orleans.Runtime
 
             Interlocked.Decrement(ref count);
             return true;
+        }
+
+        public bool TryRemove<T>(TKey key, Func<T, TValue, bool> predicate, T context)
+        {
+            if (!cache.TryGetValue(key, out var timestampedValue))
+            {
+                return false;
+            }
+
+            if (predicate(context, timestampedValue.Value) && TryRemove(key, timestampedValue))
+            {
+                Interlocked.Decrement(ref count);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryRemove(TKey key, TimestampedValue value)
+        {
+            var entry = new KeyValuePair<TKey, TimestampedValue>(key, value);
+
+#if NET5_0_OR_GREATER
+            return cache.TryRemove(entry);
+#else
+            // Cast the dictionary to its interface type to access the explicitly implemented Remove method.
+            var cacheDictionary = (IDictionary<TKey, TimestampedValue>)cache;
+            return cacheDictionary.Remove(entry);
+#endif
         }
 
         public void Clear()
@@ -104,7 +138,7 @@ namespace Orleans.Runtime
         {
             if (cache.TryGetValue(key, out var result))
             {
-                var age = DateTime.UtcNow.Subtract(result.WhenLoaded);
+                var age = result.Age.Elapsed;
                 if (age > requiredFreshness)
                 {
                     if (RemoveKey(key)) RaiseFlushEvent?.Invoke();
@@ -132,10 +166,9 @@ namespace Orleans.Runtime
         /// </summary>
         public void RemoveExpired()
         {
-            var frestTime = DateTime.UtcNow - requiredFreshness;
             foreach (var entry in this.cache)
             {
-                if (entry.Value.WhenLoaded < frestTime)
+                if (entry.Value.Age.Elapsed > requiredFreshness)
                 {
                     if (RemoveKey(entry.Key)) RaiseFlushEvent?.Invoke();
                 }

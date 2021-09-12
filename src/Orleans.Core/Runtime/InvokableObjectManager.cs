@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Orleans.CodeGeneration;
 using Orleans.Runtime;
 using Orleans.Serialization;
 using Orleans.Serialization.Invocation;
@@ -109,6 +108,12 @@ namespace Orleans
             IServiceProvider IGrainContext.ActivationServices => throw new NotSupportedException();
 
             IGrainLifecycle IGrainContext.ObservableLifecycle => throw new NotImplementedException();
+
+            public IWorkItemScheduler Scheduler => throw new NotImplementedException();
+
+            public bool IsExemptFromCollection => true;
+
+            public PlacementStrategy PlacementStrategy => ClientObserversPlacement.Instance;
 
             void IGrainContext.SetComponent<TComponent>(TComponent value)
             {
@@ -336,6 +341,10 @@ namespace Orleans
                         throw new InvalidOperationException($"Unrecognized direction for message {message}, request {request}, which resulted in exception: {exception}");
                 }
             }
+
+            public void Activate(Dictionary<string, object> requestContext, CancellationToken? cancellationToken = null) { }
+            public void Deactivate(CancellationToken? cancellationToken = null) { }
+            public Task Deactivated => Task.CompletedTask;
         }
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+using System;
 
 namespace Orleans.CodeGenerator
 {
@@ -100,8 +101,12 @@ namespace Orleans.CodeGenerator
             var statements = new List<StatementSyntax>();
             var requestVar = IdentifierName("request");
             var requestDescription = metadataModel.GeneratedInvokables[methodDescription];
-            var createRequestExpr = InvocationExpression(ThisExpression().Member("GetInvokable", requestDescription.TypeSyntax))
-                .WithArgumentList(ArgumentList(SeparatedList<ArgumentSyntax>()));
+            ExpressionSyntax createRequestExpr = (!requestDescription.IsEmptyConstructable || requestDescription.UseActivator) switch
+            {
+                true => InvocationExpression(ThisExpression().Member("GetInvokable", requestDescription.TypeSyntax))
+                .WithArgumentList(ArgumentList(SeparatedList<ArgumentSyntax>())),
+                _ => ObjectCreationExpression(requestDescription.TypeSyntax).WithArgumentList(ArgumentList())
+            };
 
             statements.Add(
                 LocalDeclarationStatement(
@@ -146,21 +151,21 @@ namespace Orleans.CodeGenerator
                 // Task<T> / ValueTask<T>
                 resultType = methodReturnType.TypeArguments[0];
             }
-            else if (SymbolEqualityComparer.Default.Equals(methodReturnType, libraryTypes.Void))
-            {
-                // void
-                resultType = libraryTypes.Object;
-            }
             else
             {
-                // Task / ValueTask
-                resultType = libraryTypes.Object;
+                // void, Task / ValueTask
+                resultType = null;
             }
 
             // C#: base.InvokeAsync<TReturn>(request);
+            var baseInvokeExpression = resultType switch
+            {
+                not null => BaseExpression().Member(invokeMethodName, resultType.ToTypeSyntax(methodDescription.TypeParameterSubstitutions)),
+                _ => BaseExpression().Member(invokeMethodName),
+            };
             var invocationExpression =
                          InvocationExpression(
-                             BaseExpression().Member(invokeMethodName, resultType.ToTypeSyntax(methodDescription.TypeParameterSubstitutions)),
+                             baseInvokeExpression,
                              ArgumentList(SeparatedList(new[] { Argument(requestVar) })));
 
             var rt = methodReturnType.ConstructedFrom;
@@ -169,133 +174,16 @@ namespace Orleans.CodeGenerator
                 // C#: return <invocation>.AsTask()
                 statements.Add(ReturnStatement(InvocationExpression(invocationExpression.Member("AsTask"), ArgumentList())));
             }
-            else if (SymbolEqualityComparer.Default.Equals(rt, libraryTypes.ValueTask_1))
+            else if (SymbolEqualityComparer.Default.Equals(rt, libraryTypes.ValueTask_1) || SymbolEqualityComparer.Default.Equals(methodReturnType, libraryTypes.ValueTask))
             {
+                // ValueTask<T> / ValueTask
                 // C#: return <invocation>
                 statements.Add(ReturnStatement(invocationExpression));
-            }
-            else if (SymbolEqualityComparer.Default.Equals(methodReturnType, libraryTypes.ValueTask))
-            {
-                // C#: return new ValueTask(<invocation>)
-                statements.Add(ReturnStatement(ObjectCreationExpression(libraryTypes.ValueTask.ToTypeSyntax()).WithArgumentList(ArgumentList(SeparatedList(new[]
-                {
-                    Argument(InvocationExpression(invocationExpression.Member("AsTask"), ArgumentList()))
-                })))));
             }
             else
             {
                 // C#: _ = <invocation>
                 statements.Add(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("_"), invocationExpression)));
-            }
-
-            return Block(statements);
-        }
-
-        private static BlockSyntax CreateProxyMethodBody(
-            LibraryTypes libraryTypes,
-            MetadataModel metadataModel,
-            MethodDescription methodDescription)
-        {
-            var statements = new List<StatementSyntax>();
-
-            var completionVar = IdentifierName("completion");
-            var requestVar = IdentifierName("request");
-
-            var requestDescription = metadataModel.GeneratedInvokables[methodDescription];
-            var createRequestExpr = InvocationExpression(libraryTypes.InvokablePool.ToTypeSyntax().Member("Get", requestDescription.TypeSyntax))
-                .WithArgumentList(ArgumentList(SeparatedList<ArgumentSyntax>()));
-
-            statements.Add(
-                LocalDeclarationStatement(
-                    VariableDeclaration(
-                        ParseTypeName("var"),
-                        SingletonSeparatedList(
-                            VariableDeclarator(
-                                    Identifier("request"))
-                                .WithInitializer(
-                                    EqualsValueClause(createRequestExpr))))));
-
-            // Set request object fields from method parameters.
-            var parameterIndex = 0;
-            foreach (var parameter in methodDescription.Method.Parameters)
-            {
-                statements.Add(
-                    ExpressionStatement(
-                        AssignmentExpression(
-                            SyntaxKind.SimpleAssignmentExpression,
-                            requestVar.Member($"arg{parameterIndex}"),
-                            IdentifierName(SyntaxFactoryUtility.GetSanitizedName(parameter, parameterIndex)))));
-
-                parameterIndex++;
-            }
-
-            ITypeSymbol returnType;
-            var methodReturnType = (INamedTypeSymbol)methodDescription.Method.ReturnType;
-            if (methodReturnType.TypeParameters.Length == 1)
-            {
-                returnType = methodReturnType.TypeArguments[0];
-            }
-            else
-            {
-                returnType = libraryTypes.Object;
-            }
-
-            var createCompletionExpr = InvocationExpression(libraryTypes.ResponseCompletionSourcePool.ToTypeSyntax().Member("Get", returnType.ToTypeSyntax(methodDescription.TypeParameterSubstitutions)))
-                .WithArgumentList(ArgumentList(SeparatedList<ArgumentSyntax>()));
-            statements.Add(
-                LocalDeclarationStatement(
-                    VariableDeclaration(
-                        ParseTypeName("var"),
-                        SingletonSeparatedList(
-                            VariableDeclarator(
-                                    Identifier("completion"))
-                                .WithInitializer(
-                                    EqualsValueClause(createCompletionExpr))))));
-
-            var sendRequestMethodName = "SendRequest";
-            foreach (var attr in methodDescription.Method.GetAttributes())
-            {
-                if (attr.AttributeClass.GetAttributes(libraryTypes.InvokeMethodNameAttribute, out var attrs))
-                {
-                    foreach (var methodAttr in attrs)
-                    {
-                        sendRequestMethodName = (string)methodAttr.ConstructorArguments.First().Value;
-                    }
-                }
-            }
-
-            // Issue request
-            statements.Add(
-                ExpressionStatement(
-                        InvocationExpression(
-                            BaseExpression().Member(sendRequestMethodName),
-                            ArgumentList(SeparatedList(new[] { Argument(completionVar), Argument(requestVar) })))));
-
-            // Return result
-            string valueTaskMethodName;
-            if (methodReturnType.TypeArguments.Length == 1)
-            {
-                valueTaskMethodName = "AsValueTask";
-            }
-            else if (SymbolEqualityComparer.Default.Equals(methodReturnType, libraryTypes.Void))
-            {
-                valueTaskMethodName = null;
-            }
-            else
-            {
-                valueTaskMethodName = "AsVoidValueTask";
-            }
-
-            if (valueTaskMethodName is not null)
-            {
-                var returnVal = InvocationExpression(completionVar.Member(valueTaskMethodName));
-
-                if (SymbolEqualityComparer.Default.Equals(methodReturnType.ConstructedFrom, libraryTypes.Task_1) || SymbolEqualityComparer.Default.Equals(methodReturnType, libraryTypes.Task))
-                {
-                    returnVal = InvocationExpression(returnVal.Member("AsTask"));
-                }
-
-                statements.Add(ReturnStatement(returnVal));
             }
 
             return Block(statements);

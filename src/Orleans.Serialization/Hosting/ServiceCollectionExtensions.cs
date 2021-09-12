@@ -68,8 +68,10 @@ namespace Orleans.Serialization
 
                 services.AddSingleton<ExceptionCodec>();
                 services.AddSingleton<IGeneralizedCodec>(sp => sp.GetRequiredService<ExceptionCodec>());
+                services.AddSingleton<IGeneralizedBaseCodec>(sp => sp.GetRequiredService<ExceptionCodec>());
 
                 // Serializer
+                services.TryAddSingleton<ObjectSerializer>();
                 services.TryAddSingleton<Serializer>();
                 services.TryAddSingleton(typeof(Serializer<>));
                 services.TryAddSingleton(typeof(ValueSerializer<>));

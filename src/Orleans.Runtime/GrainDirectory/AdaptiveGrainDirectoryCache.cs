@@ -10,8 +10,7 @@ namespace Orleans.Runtime.GrainDirectory
         internal class GrainDirectoryCacheEntry
         {
             internal ActivationAddress Address { get; }
-            internal DateTime Created { get; }
-            private DateTime LastRefreshed { get; set; }
+            private CoarseStopwatch LastRefreshed { get; set; }
             internal TimeSpan ExpirationTimer { get; private set; }
             internal int ETag { get; }
 
@@ -21,27 +20,28 @@ namespace Orleans.Runtime.GrainDirectory
             /// </summary>
             internal int NumAccesses { get; set; }
 
-            internal GrainDirectoryCacheEntry(ActivationAddress value, int etag, DateTime created, TimeSpan expirationTimer)
+            internal GrainDirectoryCacheEntry(ActivationAddress value, int etag, TimeSpan expirationTimer)
             {
                 Address = value;
                 ETag = etag;
                 ExpirationTimer = expirationTimer;
-                Created = created;
-                LastRefreshed = DateTime.UtcNow;
+                LastRefreshed = CoarseStopwatch.StartNew();
                 NumAccesses = 0;
             }
 
             internal bool IsExpired()
             {
-                return DateTime.UtcNow >= LastRefreshed.Add(ExpirationTimer);
+                return LastRefreshed.Elapsed >= ExpirationTimer;
             }
 
             internal void Refresh(TimeSpan newExpirationTimer)
             {
-                LastRefreshed = DateTime.UtcNow;
+                LastRefreshed = CoarseStopwatch.StartNew();
                 ExpirationTimer = newExpirationTimer;
             }
         }
+
+        private static readonly Func<ActivationAddress, GrainDirectoryCacheEntry, bool> ActivationAddressEqual = (addr, entry) => addr.Equals(entry.Address);
 
         private readonly LRU<GrainId, GrainDirectoryCacheEntry> cache;
         /// controls the time the new entry is considered "fresh" (unit: ms)
@@ -70,13 +70,15 @@ namespace Orleans.Runtime.GrainDirectory
 
         public void AddOrUpdate(ActivationAddress value, int version)
         {            
-            var entry = new GrainDirectoryCacheEntry(value, version, DateTime.UtcNow, initialExpirationTimer);
+            var entry = new GrainDirectoryCacheEntry(value, version, initialExpirationTimer);
 
             // Notice that LRU should know how to throw the oldest entry if the cache is full
             cache.Add(value.Grain, entry);
         }
 
         public bool Remove(GrainId key) => cache.RemoveKey(key);
+
+        public bool Remove(ActivationAddress key) => cache.TryRemove(key.Grain, ActivationAddressEqual, key);
 
         public void Clear() => cache.Clear();
 

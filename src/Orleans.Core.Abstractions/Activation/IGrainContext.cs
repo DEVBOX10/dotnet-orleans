@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Orleans.Serialization.Invocation;
 
 namespace Orleans.Runtime
@@ -46,22 +49,56 @@ namespace Orleans.Runtime
         /// <typeparam name="TComponent">The type used to lookup this component.</typeparam>
         /// <param name="value">The component instance.</param>
         void SetComponent<TComponent>(TComponent value);
-            
-        /// <summary>
-        /// Gets the component of the specified type.
-        /// </summary>
-        //TComponent GetComponent<TComponent>();
 
         void ReceiveMessage(object message);
+
+        IWorkItemScheduler Scheduler { get; }
+        PlacementStrategy PlacementStrategy { get; }
+
+        void Activate(Dictionary<string, object> requestContext, CancellationToken? cancellationToken = default);
+        void Deactivate(CancellationToken? cancellationToken = default);
+        Task Deactivated { get; }
     }
 
-    internal interface IActivationData : IGrainContext
+    public static class GrainContextExtensions
     {
-        IGrainRuntime Runtime { get; }
+        public static Task DeactivateAsync(this IGrainContext grainContext, CancellationToken? cancellationToken = default)
+        {
+            grainContext.Deactivate(cancellationToken);
+            return grainContext.Deactivated;
+        }
+    }
 
+    internal interface ICollectibleGrainContext : IGrainContext
+    {
+        bool IsValid { get; }
+        bool IsExemptFromCollection { get; }
+        TimeSpan CollectionAgeLimit { get; }
+        DateTime KeepAliveUntil { get; }
+        DateTime CollectionTicket { get; set; }
+        bool IsInactive { get; }
+        bool IsStale();
+        TimeSpan GetIdleness();
+        void StartDeactivating();
         void DelayDeactivation(TimeSpan timeSpan);
+    }
+
+    internal interface IActivationData : ICollectibleGrainContext
+    {
+        IGrainRuntime GrainRuntime { get; }
+    }
+
+    internal interface IGrainTimerRegistry
+    {
         void OnTimerCreated(IGrainTimer timer);
         void OnTimerDisposed(IGrainTimer timer);
+    }
+
+    public interface IWorkItemScheduler
+    {
+        void QueueAction(Action action);
+        void QueueTask(Task task);
+        void QueueWorkItem(IThreadPoolWorkItem workItem);
     }
 
     /// <summary>

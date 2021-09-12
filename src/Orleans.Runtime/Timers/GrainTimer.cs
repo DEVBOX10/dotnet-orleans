@@ -6,7 +6,7 @@ using Orleans.Runtime.Scheduler;
 
 namespace Orleans.Runtime
 {
-    internal class GrainTimer : IGrainTimer
+    internal sealed class GrainTimer : IGrainTimer
     {
         private Func<object, Task> asyncCallback;
         private AsyncTaskSafeTimer timer;
@@ -15,20 +15,26 @@ namespace Orleans.Runtime
         private DateTime previousTickTime;
         private int totalNumTicks;
         private readonly ILogger logger;
-        private Task currentlyExecutingTickTask;
-        private readonly OrleansTaskScheduler scheduler;
-        private readonly IActivationData activationData;
+        private volatile Task currentlyExecutingTickTask;
+        private object currentlyExecutingTickTaskLock = new();
+        private readonly IGrainContext grainContext;
 
         public string Name { get; }
         
         private bool TimerAlreadyStopped { get { return timer == null || asyncCallback == null; } }
 
-        private GrainTimer(OrleansTaskScheduler scheduler, IActivationData activationData, ILogger logger, Func<object, Task> asyncCallback, object state, TimeSpan dueTime, TimeSpan period, string name)
+        private GrainTimer(IGrainContext activationData, ILogger logger, Func<object, Task> asyncCallback, object state, TimeSpan dueTime, TimeSpan period, string name)
         {
-            var ctxt = RuntimeContext.CurrentGrainContext;
-            scheduler.CheckSchedulingContextValidity(ctxt);
-            this.scheduler = scheduler;
-            this.activationData = activationData;
+            var ctxt = RuntimeContext.Current;
+            if (ctxt is null)
+            {
+                throw new InvalidSchedulingContextException(
+                    "Current grain context is null. "
+                     + "Please make sure you are not trying to create a Timer from outside Orleans Task Scheduler, "
+                     + "which will be the case if you create it inside Task.Run.");
+            }
+
+            this.grainContext = activationData;
             this.logger = logger;
             this.Name = name;
             this.asyncCallback = asyncCallback;
@@ -42,16 +48,15 @@ namespace Orleans.Runtime
         }
 
         internal static IGrainTimer FromTaskCallback(
-            OrleansTaskScheduler scheduler,
             ILogger logger,
             Func<object, Task> asyncCallback,
             object state,
             TimeSpan dueTime,
             TimeSpan period,
             string name = null,
-            IActivationData activationData = null)
+            IGrainContext activationData = null)
         {
-            return new GrainTimer(scheduler, activationData, logger, asyncCallback, state, dueTime, period, name);
+            return new GrainTimer(activationData, logger, asyncCallback, state, dueTime, period, name);
         }
 
         public void Start()
@@ -74,7 +79,7 @@ namespace Orleans.Runtime
             try
             {
                 // Schedule call back to grain context
-                await this.scheduler.QueueNamedTask(() => ForwardToAsyncCallback(state), context, this.Name);
+                await context.QueueNamedTask(() => ForwardToAsyncCallback(state), this.Name);
             }
             catch (InvalidSchedulingContextException exc)
             {
@@ -88,18 +93,22 @@ namespace Orleans.Runtime
         private async Task ForwardToAsyncCallback(object state)
         {
             // AsyncSafeTimer ensures that calls to this method are serialized.
-            var callback = asyncCallback;
             if (TimerAlreadyStopped) return;
-            
-            totalNumTicks++;
-
-            if (logger.IsEnabled(LogLevel.Trace))
-                logger.Trace(ErrorCode.TimerBeforeCallback, "About to make timer callback for timer {0}", GetFullName());
 
             try
             {
-                RequestContext.Clear(); // Clear any previous RC, so it does not leak into this call by mistake. 
-                currentlyExecutingTickTask = callback(state);
+                RequestContext.Clear(); // Clear any previous RC, so it does not leak into this call by mistake.
+                lock (this.currentlyExecutingTickTaskLock)
+                {
+                    if (TimerAlreadyStopped) return;
+
+                    totalNumTicks++;
+
+                    if (logger.IsEnabled(LogLevel.Trace))
+                        logger.Trace(ErrorCode.TimerBeforeCallback, "About to make timer callback for timer {0}", GetFullName());
+
+                    currentlyExecutingTickTask = asyncCallback(state);
+                }
                 await currentlyExecutingTickTask;
                 
                 if (logger.IsEnabled(LogLevel.Trace)) logger.Trace(ErrorCode.TimerAfterCallback, "Completed timer callback for timer {0}", GetFullName());
@@ -161,17 +170,7 @@ namespace Orleans.Runtime
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        // Maybe called by finalizer thread with disposing=false. As per guidelines, in such a case do not touch other objects.
-        // Dispose() may be called multiple times
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-                DisposeTimer();
-            
+            DisposeTimer();
             asyncCallback = null;
         }
 
@@ -182,8 +181,12 @@ namespace Orleans.Runtime
 
             Utils.SafeExecute(tmp.Dispose);
             timer = null;
-            asyncCallback = null;
-            activationData?.OnTimerDisposed(this);
+            lock (this.currentlyExecutingTickTaskLock)
+            {
+                asyncCallback = null;
+            }
+
+            grainContext?.GetComponent<IGrainTimerRegistry>().OnTimerDisposed(this);
         }
     }
 }

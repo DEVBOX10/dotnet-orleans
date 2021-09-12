@@ -1,6 +1,6 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
+using Orleans.Serialization.Activators;
 
 namespace Orleans.Serialization.Invocation
 {
@@ -16,7 +16,7 @@ namespace Orleans.Serialization.Invocation
             return result;
         }
 
-        public static Response Completed { get; } = new CompletedResponse();
+        public static Response Completed => CompletedResponse.Instance;
 
         public abstract object Result { get; set; }
 
@@ -27,12 +27,29 @@ namespace Orleans.Serialization.Invocation
         public abstract void Dispose();
 
         public virtual object GetResultOrDefault() => Exception is { } ? Result : default;
+
+        public override string ToString()
+        {
+            if (GetResultOrDefault() is { } result)
+            {
+                return result.ToString();
+            }
+            else if (Exception is { } exception)
+            {
+                return exception.ToString();
+            }
+
+            return "[null]";
+        }
     }
 
     [GenerateSerializer]
     [Immutable]
+    [UseActivator]
     public sealed class CompletedResponse : Response
     {
+        public static CompletedResponse Instance { get; } = new CompletedResponse();
+
         public override object Result { get => null; set => throw new InvalidOperationException($"Type {nameof(CompletedResponse)} is read-only"); } 
 
         public override Exception Exception { get => null; set => throw new InvalidOperationException($"Type {nameof(CompletedResponse)} is read-only"); }
@@ -40,6 +57,14 @@ namespace Orleans.Serialization.Invocation
         public override T GetResult<T>() => default;
 
         public override void Dispose() { }
+
+        public override string ToString() => "[Completed]";
+    }
+
+    [RegisterActivator]
+    public sealed class CompletedResponseActivator : IActivator<CompletedResponse>
+    {
+        public CompletedResponse Create() => CompletedResponse.Instance;
     }
 
     [GenerateSerializer]
@@ -67,11 +92,28 @@ namespace Orleans.Serialization.Invocation
         }
 
         public override void Dispose() { }
+
+        public override string ToString() => Exception?.ToString() ?? "[null]";
     }
 
     [GenerateSerializer]
     public abstract class Response<TResult> : Response
     {
         public abstract TResult TypedResult { get; set; }
+
+        public override string ToString()
+        {
+            if (Exception is { } exception)
+            {
+                return exception.ToString();
+            }
+
+            if (TypedResult is { } result)
+            {
+                return result.ToString();
+            }
+
+            return "[null]";
+        }
     }
 }
