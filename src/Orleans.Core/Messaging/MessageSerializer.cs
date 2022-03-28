@@ -82,23 +82,24 @@ namespace Orleans.Runtime.Messaging
 
             try
             {
-                // decode header
+                // Decode header
                 var header = input.Slice(FramingLength, headerLength);
 
-                // decode body
+                // Decode body
                 int bodyOffset = FramingLength + headerLength;
                 var body = input.Slice(bodyOffset, bodyLength);
 
-                // build message
+                // Build message
+                message = new();
                 if (header.IsSingleSegment)
                 {
                     var headersReader = Reader.Create(header.First.Span, _deserializationSession);
-                    message = DeserializeFast(ref headersReader);
+                    DeserializeFast(ref headersReader, message);
                 }
                 else
                 {
                     var headersReader = Reader.Create(header, _deserializationSession);
-                    message = DeserializeFast(ref headersReader);
+                    DeserializeFast(ref headersReader, message);
                 }
 
                 _deserializationSession.PartialReset();
@@ -227,11 +228,6 @@ namespace Orleans.Runtime.Messaging
                 writer.WriteByte((byte)value.RejectionType);
             }
 
-            if ((headers & Headers.REQUEST_CONTEXT) != Headers.NONE)
-            {
-                WriteRequestContext(ref writer, value.RequestContextData);
-            }
-
             if ((headers & Headers.RESULT) != Headers.NONE)
             {
                 writer.WriteByte((byte)value.Result);
@@ -277,13 +273,18 @@ namespace Orleans.Runtime.Messaging
                 IdSpanCodec.WriteRaw(ref writer, value.InterfaceType.Value);
             }
 
+            // Always write RequestContext last
+            if ((headers & Headers.REQUEST_CONTEXT) != Headers.NONE)
+            {
+                WriteRequestContext(ref writer, value.RequestContextData);
+            }
+
             return value;
         }
 
-        private Message DeserializeFast<TInput>(ref Reader<TInput> reader)
+        private void DeserializeFast<TInput>(ref Reader<TInput> reader, Message result)
         {
             var headers = (Headers)reader.ReadVarUInt32();
-            var result = new Message();
 
             if ((headers & Headers.CACHE_INVALIDATION_HEADER) != Headers.NONE)
             {
@@ -322,11 +323,6 @@ namespace Orleans.Runtime.Messaging
 
             if ((headers & Headers.REJECTION_TYPE) != Headers.NONE)
                 result.RejectionType = (RejectionTypes)reader.ReadByte();
-
-            if ((headers & Headers.REQUEST_CONTEXT) != Headers.NONE)
-            {
-                result.RequestContextData = ReadRequestContext(ref reader);
-            }
 
             if ((headers & Headers.RESULT) != Headers.NONE)
                 result.Result = (ResponseTypes)reader.ReadByte();
@@ -372,7 +368,10 @@ namespace Orleans.Runtime.Messaging
                 result.InterfaceType = new GrainInterfaceType(interfaceTypeSpan);
             }
 
-            return result;
+            if ((headers & Headers.REQUEST_CONTEXT) != Headers.NONE)
+            {
+                result.RequestContextData = ReadRequestContext(ref reader);
+            }
         }
 
         private List<GrainAddress> ReadCacheInvalidationHeaders<TInput>(ref Reader<TInput> reader)
@@ -416,7 +415,7 @@ namespace Orleans.Runtime.Messaging
             }
 
             string result;
-#if NETCOREAPP
+#if NETCOREAPP3_1_OR_GREATER
             if (reader.TryReadBytes(length, out var span))
             {
                 result = Encoding.UTF8.GetString(span);
@@ -440,7 +439,7 @@ namespace Orleans.Runtime.Messaging
                 return;
             }
 
-#if NETCOREAPP
+#if NETCOREAPP3_1_OR_GREATER
             var numBytes = Encoding.UTF8.GetByteCount(value);
             writer.WriteVarInt32(numBytes);
             if (numBytes < 512)
@@ -502,7 +501,7 @@ namespace Orleans.Runtime.Messaging
             {
                 return null;
             }
-#if NET5_0
+#if NET5_0_OR_GREATER
             if (reader.TryReadBytes(length, out var bytes))
             {
                 ip = new IPAddress(bytes);
@@ -512,7 +511,7 @@ namespace Orleans.Runtime.Messaging
 #endif
                 var addressBytes = reader.ReadBytes((uint)length);
                 ip = new IPAddress(addressBytes);
-#if NET5_0
+#if NET5_0_OR_GREATER
             }
 #endif
             var port = (int)reader.ReadVarUInt32();
@@ -530,7 +529,7 @@ namespace Orleans.Runtime.Messaging
             }
 
             var ep = value.Endpoint;
-#if NET5_0
+#if NET5_0_OR_GREATER
             Span<byte> buffer = stackalloc byte[64];
             if (ep.Address.TryWriteBytes(buffer, out var length))
             {

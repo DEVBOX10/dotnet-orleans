@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Concurrency;
 using Orleans.Providers;
+using Orleans.Runtime;
+using Orleans.Timers;
 using UnitTests.GrainInterfaces;
 
 namespace UnitTests.Grains
@@ -200,11 +203,11 @@ namespace UnitTests.Grains
     [StorageProvider(ProviderName = "MemoryStore")]
     public class GrainWithListFields : Grain<IGrainWithListFieldsState>, IGrainWithListFields
     {
-        public override Task OnActivateAsync()
+        public override Task OnActivateAsync(CancellationToken cancellationToken)
         {
             if (State.Items == null)
                 State.Items = new List<string>();
-            return base.OnActivateAsync();
+            return base.OnActivateAsync(cancellationToken);
         }
 
         public Task AddItem(string item)
@@ -230,12 +233,12 @@ namespace UnitTests.Grains
     [StorageProvider(ProviderName = "MemoryStore")]
     public class GenericGrainWithListFields<T> : Grain<GenericGrainWithListFieldsState<T>>, IGenericGrainWithListFields<T>
     {
-        public override Task OnActivateAsync()
+        public override Task OnActivateAsync(CancellationToken cancellationToken)
         {
             if (State.Items == null)
                 State.Items = new List<T>();
 
-            return base.OnActivateAsync();
+            return base.OnActivateAsync(cancellationToken);
         }
 
         public Task AddItem(T item)
@@ -539,15 +542,20 @@ namespace UnitTests.Grains
     }
 
     [Reentrant]
-    public class PingSelfGrain<T> : Grain, IGenericPingSelf<T>
+    public class PingSelfGrain<T> : IGrainBase, IGenericPingSelf<T>
     {
         private readonly ILogger logger;
         private T _lastValue;
+        private readonly ITimerRegistry _timerRegistry;
 
-        public PingSelfGrain(ILoggerFactory loggerFactory)
+        public PingSelfGrain(ILogger<PingSelfGrain<T>> logger, IGrainContext context, ITimerRegistry timerRegistry)
         {
-            this.logger = loggerFactory.CreateLogger($"{this.GetType().Name}-{this.IdentityString}");
+            this.logger = logger;
+            this.GrainContext = context;
+            _timerRegistry = timerRegistry;
         }
+
+        public IGrainContext GrainContext { get; set; }
 
         public Task<T> Ping(T t)
         {
@@ -574,17 +582,18 @@ namespace UnitTests.Grains
 
         public Task ScheduleDelayedPing(IGenericPingSelf<T> target, T t, TimeSpan delay)
         {
-            RegisterTimer(o =>
-            {
-                this.logger.LogDebug("***Timer fired for pinging {0}***", target.GetPrimaryKey());
-                return target.Ping(t);
-            },
+            _timerRegistry.RegisterTimer(
+                GrainContext,
+                o =>
+                {
+                    this.logger.LogDebug("***Timer fired for pinging {0}***", target.GetPrimaryKey());
+                    return target.Ping(t);
+                },
                 null,
                 delay,
                 TimeSpan.FromMilliseconds(-1));
             return Task.CompletedTask;
         }
-
 
         public Task<T> GetLastValue()
         {
@@ -594,16 +603,16 @@ namespace UnitTests.Grains
         public async Task ScheduleDelayedPingToSelfAndDeactivate(IGenericPingSelf<T> target, T t, TimeSpan delay)
         {
             await target.ScheduleDelayedPing(this, t, delay);
-            DeactivateOnIdle();
+            this.DeactivateOnIdle();
         }
 
-        public override Task OnActivateAsync()
+        public Task OnActivateAsync(CancellationToken cancellationToken)
         {
             this.logger.LogDebug("***Activating*** {0}", this.GetPrimaryKey());
             return Task.CompletedTask;
         }
 
-        public override Task OnDeactivateAsync()
+        public Task OnDeactivateAsync(DeactivationReason deactivationReason, CancellationToken cancellationToken)
         {
             this.logger.LogDebug("***Deactivating*** {0}", this.GetPrimaryKey());
             return Task.CompletedTask;
@@ -613,7 +622,7 @@ namespace UnitTests.Grains
     public class LongRunningTaskGrain<T> : Grain, ILongRunningTaskGrain<T>
     {
         private T lastValue;
-        
+
         public Task CancellationTokenCallbackThrow(GrainCancellationToken tc)
         {
             tc.CancellationToken.Register(() =>
@@ -718,7 +727,7 @@ namespace UnitTests.Grains
     {
         private A collection;
 
-        public override Task OnActivateAsync()
+        public override Task OnActivateAsync(CancellationToken cancellationToken)
         {
             collection = new A();
             return Task.CompletedTask;
@@ -759,7 +768,7 @@ namespace UnitTests.Grains
         }
     }
 
-        
+
     public class IndepedentlyConcretizedGenericGrain : Grain, IIndependentlyConcretizedGenericGrain<string>, IIndependentlyConcretizedGrain
     {
         public Task<string> Hello() {
@@ -789,6 +798,22 @@ namespace UnitTests.Grains
     public class Reducer2 : IReducer<Int32, Reducer2Action>
     {
         public Task<int> Handle(int prevState, Reducer2Action act) => Task.FromResult(prevState + act.ToString().Length);
+    }
+
+    public interface IUnmanagedArgGrain<T> : IGrainWithGuidKey where T : unmanaged
+    {
+        ValueTask<T> Echo(T value);
+        ValueTask<U> EchoNonNullable<U>(U value) where U : notnull;
+        ValueTask<U> EchoReference<U>(U value) where U : class;
+        ValueTask<U> EchoValue<U>(U value) where U : struct;
+    }
+
+    public class UnmanagedArgGrain<T> : IUnmanagedArgGrain<T> where T : unmanaged
+    {
+        public ValueTask<T> Echo(T value) => new(value);
+        public ValueTask<U> EchoNonNullable<U>(U value)  where U : notnull => new(value);
+        public ValueTask<U> EchoReference<U>(U value) where U : class => new(value);
+        public ValueTask<U> EchoValue<U>(U value) where U : struct => new(value);
     }
 
     public interface IReducerGameGrain<TState, TAction> : IGrainWithStringKey

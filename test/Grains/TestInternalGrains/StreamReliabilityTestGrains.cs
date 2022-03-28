@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -17,7 +18,7 @@ namespace UnitTests.Grains
     [GenerateSerializer]
     public class StreamReliabilityTestGrainState
     {
-        // For producer and consumer 
+        // For producer and consumer
         // -- only need to store because of how we run our unit tests against multiple providers
         [Id(0)]
         public string StreamProviderName { get; set; }
@@ -62,6 +63,8 @@ namespace UnitTests.Grains
         [NonSerialized]
         private ILogger logger;
 
+        private readonly IGrainContext _grainContext;
+
 #if USE_GENERICS
         private IAsyncStream<T> Stream { get; set; }
         private IAsyncObserver<T> Producer { get; set; }
@@ -73,12 +76,13 @@ namespace UnitTests.Grains
 #endif
         private const string StreamNamespace = StreamTestsConstants.StreamReliabilityNamespace;
 
-        public StreamReliabilityTestGrain(ILoggerFactory loggerFactory)
+        public StreamReliabilityTestGrain(ILoggerFactory loggerFactory, IGrainContext grainContext)
         {
+            _grainContext = grainContext;
             this.logger = loggerFactory.CreateLogger($"{this.GetType().Name}-{this.IdentityString}");
         }
 
-        public override async Task OnActivateAsync()
+        public override async Task OnActivateAsync(CancellationToken cancellationToken)
         {
             logger.Info(String.Format("OnActivateAsync IsProducer = {0}, IsConsumer = {1}.",
                 State.IsProducer, State.ConsumerSubscriptionHandles != null && State.ConsumerSubscriptionHandles.Count > 0));
@@ -114,10 +118,10 @@ namespace UnitTests.Grains
             }
         }
 
-        public override Task OnDeactivateAsync()
+        public override Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
         {
             logger.Info("OnDeactivateAsync");
-            return base.OnDeactivateAsync();
+            return base.OnDeactivateAsync(reason, cancellationToken);
         }
 
         public Task<int> GetConsumerCount()
@@ -261,7 +265,7 @@ namespace UnitTests.Grains
 
         public Task<SiloAddress> GetLocation()
         {
-            SiloAddress siloAddress = Data.Address.SiloAddress;
+            SiloAddress siloAddress = _grainContext.Address.SiloAddress;
             logger.Info("GetLocation SiloAddress={0}", siloAddress);
             return Task.FromResult(siloAddress);
         }
@@ -360,7 +364,7 @@ namespace UnitTests.Grains
             this.logger = loggerFactory.CreateLogger($"{this.GetType().Name}-{this.IdentityString}");
         }
 
-        public override Task OnActivateAsync()
+        public override Task OnActivateAsync(CancellationToken cancellationToken)
         {
             logger.Info(String.Format("OnActivateAsync IsProducer = {0}, IsConsumer = {1}.",
                 State.IsProducer, State.ConsumerSubscriptionHandles != null && State.ConsumerSubscriptionHandles.Count > 0));

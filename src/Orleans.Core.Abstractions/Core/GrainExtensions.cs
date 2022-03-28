@@ -1,5 +1,7 @@
 using System;
 using Orleans.Runtime;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace Orleans
 {
@@ -10,100 +12,142 @@ namespace Orleans
     {
         private const string WRONG_GRAIN_ERROR_MSG = "Passing a half baked grain as an argument. It is possible that you instantiated a grain class explicitly, as a regular object and not via Orleans runtime or via proper test mocking";
 
+        /// <summary>
+        /// Returns a reference to the provided grain.
+        /// </summary>
+        /// <param name="grain">The grain to create a reference for.</param>
+        /// <returns>A reference to the provided grain.</returns>
         internal static GrainReference AsReference(this IAddressable grain)
         {
-            ThrowIfNullGrain(grain);
+            if (grain is null)
+            {
+                ThrowGrainNull();
+            }
 
             // When called against an instance of a grain reference class, do nothing
             var reference = grain as GrainReference;
             if (reference != null) return reference;
 
-            var grainBase = grain as Grain;
-            if (grainBase != null)
+            var context = grain switch
             {
-                if (grainBase.Data?.GrainReference is GrainReference grainRef)
-                {
-                    return grainRef;
-                }
-                else
-                {
-                    throw new ArgumentException(WRONG_GRAIN_ERROR_MSG, nameof(grain));
-                }
+                Grain grainBase => grainBase.GrainContext,
+                IGrainBase activation => activation.GrainContext,
+                ISystemTargetBase systemTarget => systemTarget,
+                _ => throw new ArgumentException(GetWrongGrainTypeErrorMessage(grain), nameof(grain))
+            };
+
+            if (context?.GrainReference is not { } grainRef)
+            {
+                throw new ArgumentException(WRONG_GRAIN_ERROR_MSG, nameof(grain));
             }
 
-            var systemTarget = grain as ISystemTargetBase;
-            if (systemTarget != null) return systemTarget.GrainReference;
-
-            throw new ArgumentException(
-                $"AsWeaklyTypedReference has been called on an unexpected type: {grain.GetType().FullName}.",
-                nameof(grain));
+            return grainRef;
         }
 
         /// <summary>
-        /// Converts this grain to a specific grain interface.
+        /// Returns a typed reference to the provided grain.
         /// </summary>
         /// <typeparam name="TGrainInterface">The type of the grain interface.</typeparam>
         /// <param name="grain">The grain to convert.</param>
-        /// <returns>A strongly typed <c>GrainReference</c> of grain interface type TGrainInterface.</returns>
+        /// <remarks>
+        /// If the provided value is a grain instance, this will create a reference which implements the provided interface.
+        /// If the provided value is already grain reference, this will create a new reference which implements the provided interface.
+        /// </remarks>
+        /// <returns>A strongly typed reference to the provided grain which implements <typeparamref name="TGrainInterface"/>.</returns>
         public static TGrainInterface AsReference<TGrainInterface>(this IAddressable grain)
         {
-            ThrowIfNullGrain(grain);
+            if (grain is null)
+            {
+                ThrowGrainNull();
+            }
+
             var grainReference = grain.AsReference();
             return (TGrainInterface)grainReference.Runtime.Cast(grain, typeof(TGrainInterface));
         }
 
         /// <summary>
-        /// Casts a grain to a specific grain interface.
+        /// Returns a typed reference to the provided grain.
         /// </summary>
         /// <typeparam name="TGrainInterface">The type of the grain interface.</typeparam>
-        /// <param name="grain">The grain to cast.</param>
-        public static TGrainInterface Cast<TGrainInterface>(this IAddressable grain)
-        {
-            return grain.AsReference<TGrainInterface>();
-        }
+        /// <param name="grain">The grain to convert.</param>
+        /// <remarks>
+        /// This method is equivalent to <see cref="AsReference{TGrainInterface}"/>.
+        /// If the provided value is a grain instance, this will create a reference which implements the provided interface.
+        /// If the provided value is already grain reference, this will create a new reference which implements the provided interface.
+        /// </remarks>
+        /// <returns>A strongly typed reference to the provided grain which implements <typeparamref name="TGrainInterface"/>.</returns>
+        public static TGrainInterface Cast<TGrainInterface>(this IAddressable grain) => grain.AsReference<TGrainInterface>();
 
         /// <summary>
-        /// Casts the provided <paramref name="grain"/> to the provided <paramref name="interfaceType"/>.
+        /// Returns a typed reference to the provided grain.
         /// </summary>
-        /// <param name="grain">The grain.</param>
-        /// <param name="interfaceType">The resulting interface type.</param>
-        /// <returns>A reference to <paramref name="grain"/> which implements <paramref name="interfaceType"/>.</returns>
-        public static object Cast(this IAddressable grain, Type interfaceType)
-        {
-            return grain.AsReference().Runtime.Cast(grain, interfaceType);
-        }
+        /// <param name="grain">The grain to convert.</param>
+        /// <param name="interfaceType">The type of the grain interface.</param>
+        /// <remarks>
+        /// If the provided value is a grain instance, this will create a reference which implements the provided interface.
+        /// If the provided value is already grain reference, this will create a new reference which implements the provided interface.
+        /// </remarks>
+        /// <returns>A strongly typed reference to the provided grain which implements <paramref name="interfaceType"/>.</returns>
+        public static object AsReference(this IAddressable grain, Type interfaceType) => grain.AsReference().Runtime.Cast(grain, interfaceType);
 
+        /// <summary>
+        /// Returns a typed reference to the provided grain.
+        /// </summary>
+        /// <param name="grain">The grain to convert.</param>
+        /// <param name="interfaceType">The type of the grain interface.</param>
+        /// <remarks>
+        /// This method is equivalent to <see cref="AsReference(IAddressable, Type)"/>.
+        /// If the provided value is a grain instance, this will create a reference which implements the provided interface.
+        /// If the provided value is already grain reference, this will create a new reference which implements the provided interface.
+        /// </remarks>
+        /// <returns>A strongly typed reference to the provided grain which implements <paramref name="interfaceType"/>.</returns>
+        public static object Cast(this IAddressable grain, Type interfaceType) => grain.AsReference().Runtime.Cast(grain, interfaceType);
+
+        /// <summary>
+        /// Returns the grain id corresponding to the provided grain.
+        /// </summary>
+        /// <param name="grain">The grain</param>
+        /// <returns>The grain id corresponding to the provided grain.</returns>
+        /// <exception cref="ArgumentException">The provided value has the wrong type or has no id.</exception>
         public static GrainId GetGrainId(this IAddressable grain)
         {
-            switch (grain)
+            var grainId = grain switch
             {
-                case Grain grainBase:
-                    if (grainBase.GrainId.IsDefault)
-                    {
-                        throw new ArgumentException(WRONG_GRAIN_ERROR_MSG, "grain");
-                    }
-                    return grainBase.GrainId;
-                case GrainReference grainReference:
-                    if (grainReference.GrainId.IsDefault)
-                    {
-                        throw new ArgumentException(WRONG_GRAIN_ERROR_MSG, "grain");
-                    }
-                    return grainReference.GrainId;
-                case ISystemTargetBase systemTarget:
-                    return systemTarget.GrainId;
-                default:
-                    throw new ArgumentException(String.Format("GetGrainIdentity has been called on an unexpected type: {0}.", grain.GetType().FullName), "grain");
+                Grain grainBase => grainBase.GrainId,
+                GrainReference grainReference => grainReference.GrainId,
+                IGrainBase grainActivation => grainActivation.GrainContext.GrainId,
+                ISystemTargetBase systemTarget => systemTarget.GrainId,
+                _ => throw new ArgumentException(GetWrongGrainTypeErrorMessage(grain), nameof(grain))
+            };
+
+            if (grainId.IsDefault)
+            {
+                throw new ArgumentException(WRONG_GRAIN_ERROR_MSG, nameof(grain));
             }
+
+            return grainId;
         }
 
         /// <summary>
-        /// Returns whether part of the primary key is of type long.
+        /// Gets the exception message which is thrown when a grain argument has a non-supported implementation type.
+        /// </summary>
+        /// <param name="grain">The argument.</param>
+        /// <returns>The exception message which is thrown when a grain argument has a non-supported implementation type.</returns>
+        private static string GetWrongGrainTypeErrorMessage(IAddressable grain) =>
+            $"{nameof(GetGrainId)} has been called on an unexpected type: {grain.GetType().FullName}."
+            + $" If the parameter is a grain implementation, you can derive from {nameof(Grain)} or implement"
+            + $" {nameof(IGrainBase)} in order to support this method. Alternatively, inject {nameof(IGrainContext)} and"
+            + $" access the {nameof(IGrainContext.GrainId)} or {nameof(IGrainContext.GrainReference)} property.";
+
+        /// <summary>
+        /// Returns whether part of the primary key is of type <see langword="long"/>.
         /// </summary>
         /// <param name="grain">The target grain.</param>
+        /// <exception cref="InvalidOperationException">The provided grain does not have a <see cref="long"/>-based key.</exception>
         public static bool IsPrimaryKeyBasedOnLong(this IAddressable grain)
         {
             var grainId = GetGrainId(grain);
-            if (GrainIdKeyExtensions.TryGetIntegerKey(grainId, out _))
+            if (grainId.TryGetIntegerKey(out _))
             {
                 return true;
             }
@@ -117,15 +161,16 @@ namespace Orleans
         }
 
         /// <summary>
-        /// Returns the long representation of a grain primary key.
+        /// Returns the <see langword="long"/> representation of a grain primary key.
         /// </summary>
         /// <param name="grain">The grain to find the primary key for.</param>
         /// <param name="keyExt">The output parameter to return the extended key part of the grain primary key, if extended primary key was provided for that grain.</param>
-        /// <returns>A long representing the primary key for this grain.</returns>
+        /// <returns>A <see langword="long"/> representing the primary key for this grain.</returns>
+        /// <exception cref="InvalidOperationException">The provided grain does not have a <see cref="long"/>-based key.</exception>
         public static long GetPrimaryKeyLong(this IAddressable grain, out string keyExt)
         {
             var grainId = GetGrainId(grain);
-            if (GrainIdKeyExtensions.TryGetIntegerKey(grainId, out var primaryKey, out keyExt))
+            if (grainId.TryGetIntegerKey(out var primaryKey, out keyExt))
             {
                 return primaryKey;
             }
@@ -139,14 +184,15 @@ namespace Orleans
         }
 
         /// <summary>
-        /// Returns the long representation of a grain primary key.
+        /// Returns the <see langword="long"/> representation of a grain primary key.
         /// </summary>
         /// <param name="grain">The grain to find the primary key for.</param>
-        /// <returns>A long representing the primary key for this grain.</returns>
+        /// <returns>A <see langword="long"/> representing the primary key for this grain.</returns>
+        /// <exception cref="InvalidOperationException">The provided grain does not have a <see cref="long"/>-based key.</exception>
         public static long GetPrimaryKeyLong(this IAddressable grain)
         {
             var grainId = GetGrainId(grain);
-            if (GrainIdKeyExtensions.TryGetIntegerKey(grainId, out var primaryKey))
+            if (grainId.TryGetIntegerKey(out var primaryKey))
             {
                 return primaryKey;
             }
@@ -160,15 +206,16 @@ namespace Orleans
         }
 
         /// <summary>
-        /// Returns the Guid representation of a grain primary key.
+        /// Returns the <see cref="Guid"/> representation of a grain primary key.
         /// </summary>
         /// <param name="grain">The grain to find the primary key for.</param>
         /// <param name="keyExt">The output parameter to return the extended key part of the grain primary key, if extended primary key was provided for that grain.</param>
-        /// <returns>A Guid representing the primary key for this grain.</returns>
+        /// <returns>A <see cref="Guid"/> representing the primary key for this grain.</returns>
+        /// <exception cref="InvalidOperationException">The provided grain does not have a <see cref="Guid"/>-based key.</exception>
         public static Guid GetPrimaryKey(this IAddressable grain, out string keyExt)
         {
             var grainId = GetGrainId(grain);
-            if (GrainIdKeyExtensions.TryGetGuidKey(grainId, out var guid, out keyExt))
+            if (grainId.TryGetGuidKey(out var guid, out keyExt))
             {
                 return guid;
             }
@@ -178,7 +225,7 @@ namespace Orleans
                 return legacyId.GetPrimaryKey(out keyExt);
             }
 
-            if (GrainIdKeyExtensions.TryGetIntegerKey(grainId, out var integerKey, out keyExt))
+            if (grainId.TryGetIntegerKey(out var integerKey, out keyExt))
             {
                 var N1 = integerKey;
                 return new Guid(0, 0, 0, (byte)N1, (byte)(N1 >> 8), (byte)(N1 >> 16), (byte)(N1 >> 24), (byte)(N1 >> 32), (byte)(N1 >> 40), (byte)(N1 >> 48), (byte)(N1 >> 56));
@@ -188,20 +235,21 @@ namespace Orleans
         }
 
         /// <summary>
-        /// Returns the Guid representation of a grain primary key.
+        /// Returns the <see cref="Guid"/> representation of a grain primary key.
         /// </summary>
         /// <param name="grain">The grain to find the primary key for.</param>
-        /// <returns>A Guid representing the primary key for this grain.</returns>
+        /// <returns>A <see cref="Guid"/> representing the primary key for this grain.</returns>
+        /// <exception cref="InvalidOperationException">The provided grain does not have a <see cref="Guid"/>-based key.</exception>
         public static Guid GetPrimaryKey(this IAddressable grain)
         {
             var grainId = GetGrainId(grain);
-            if (GrainIdKeyExtensions.TryGetGuidKey(grainId, out var guid))
+            if (grainId.TryGetGuidKey(out var guid))
                 return guid;
 
             if (LegacyGrainId.TryConvertFromGrainId(grainId, out var legacyId))
                 return legacyId.GetPrimaryKey();
 
-            if (GrainIdKeyExtensions.TryGetIntegerKey(grainId, out var integerKey))
+            if (grainId.TryGetIntegerKey(out var integerKey))
             {
                 var N1 = integerKey;
                 return new Guid(0, 0, 0, (byte)N1, (byte)(N1 >> 8), (byte)(N1 >> 16), (byte)(N1 >> 24), (byte)(N1 >> 32), (byte)(N1 >> 40), (byte)(N1 >> 48), (byte)(N1 >> 56));
@@ -211,10 +259,10 @@ namespace Orleans
         }
 
         /// <summary>
-        /// Returns the string primary key of the grain.
+        /// Returns the <see langword="string"/> primary key of the grain.
         /// </summary>
         /// <param name="grain">The grain to find the primary key for.</param>
-        /// <returns>A string representing the primary key for this grain.</returns>
+        /// <returns>A <see langword="string"/> representing the primary key for this grain.</returns>
         public static string GetPrimaryKeyString(this IAddressable grain)
         {
             var grainId = GetGrainId(grain);
@@ -226,12 +274,12 @@ namespace Orleans
             return grainId.Key.ToStringUtf8();
         }
 
-        private static void ThrowIfNullGrain(IAddressable grain)
-        {
-            if (grain == null)
-            {
-                throw new ArgumentNullException(nameof(grain));
-            }
-        }
+        /// <summary>
+        /// Throw an <see cref="ArgumentNullException"/> indicating that the grain argument is null.
+        /// </summary>
+        /// <exception cref="ArgumentNullException">The grain argument is null.</exception>
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowGrainNull() => throw new ArgumentNullException("grain");
     }
 }

@@ -23,7 +23,7 @@ namespace Orleans
 
         public GrainId GrainId => _runtimeClient.CurrentActivationAddress.GrainId;
 
-        public IAddressable GrainInstance => null;
+        public object GrainInstance => null;
 
         public ActivationId ActivationId => _runtimeClient.CurrentActivationAddress.ActivationId;
 
@@ -151,7 +151,7 @@ namespace Orleans
         }
 
         public void Activate(Dictionary<string, object> requestContext, CancellationToken? cancellationToken = null) { }
-        public void Deactivate(CancellationToken? cancellationToken = null) { }
+        public void Deactivate(DeactivationReason deactivationReason, CancellationToken? cancellationToken = null) { }
         public Task Deactivated => Task.CompletedTask;
     }
 }

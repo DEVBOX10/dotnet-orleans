@@ -87,8 +87,8 @@ namespace Orleans.Streams
                         throw new KeyNotFoundException(
                            $"Stream binding for grain type {binding.GrainType} is missing a \"{WellKnownGrainTypeProperties.StreamIdMapperKey}\" value");
                     }
-                    var streamIdMapper = _serviceProvider.GetServiceByName<IStreamIdMapper>(string.IsNullOrWhiteSpace(mapperName) ? DefaultStreamIdMapper.Name : mapperName);
 
+                    var streamIdMapper = _serviceProvider.GetServiceByName<IStreamIdMapper>(string.IsNullOrWhiteSpace(mapperName) ? DefaultStreamIdMapper.Name : mapperName);
                     var subscriber = new StreamSubscriber(binding, streamIdMapper);
                     newPredicates.Add(new StreamSubscriberPredicate(subscriber, predicate));
                 }
@@ -270,13 +270,13 @@ namespace Orleans.Streams
         {
             public StreamSubscriber(GrainBindings grainBindings, IStreamIdMapper streamIdMapper)
             {
-                this.grainBindings = grainBindings;
+                this.GrainBindings = grainBindings;
                 this.streamIdMapper = streamIdMapper;
             }
 
-            public GrainType GrainType => this.grainBindings.GrainType;
+            public GrainType GrainType => this.GrainBindings.GrainType;
 
-            private GrainBindings grainBindings { get; }
+            private GrainBindings GrainBindings { get; }
 
             private IStreamIdMapper streamIdMapper { get; }
 
@@ -290,7 +290,7 @@ namespace Orleans.Streams
 
             internal GrainId GetGrainId(InternalStreamId streamId)
             {
-                var grainKeyId = this.streamIdMapper.GetGrainKeyId(this.grainBindings, streamId);
+                var grainKeyId = this.streamIdMapper.GetGrainKeyId(this.GrainBindings, streamId);
                 return GrainId.Create(this.GrainType, grainKeyId);
             }
         }

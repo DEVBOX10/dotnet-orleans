@@ -22,13 +22,21 @@ namespace Orleans.TestingHost
         /// <inheritdoc />
         public override bool IsActive => isActive;
 
+        /// <summary>
+        /// Create a silo handle.
+        /// </summary>
+        /// <param name="siloName">Name of the silo.</param>
+        /// <param name="configuration">The configuration.</param>
+        /// <param name="postConfigureHostBuilder">An optional delegate which is invoked just prior to building the host builder.</param>
+        /// <returns>The silo handle.</returns>
         public static async Task<SiloHandle> CreateAsync(
             string siloName,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            Action<IHostBuilder> postConfigureHostBuilder = null)
         {
             var host = await Task.Run(async () =>
             {
-                var result = TestClusterHostFactory.CreateSiloHost(siloName, configuration);
+                var result = TestClusterHostFactory.CreateSiloHost(siloName, configuration, postConfigureHostBuilder);
                 await result.StartAsync();
                 return result;
             });
@@ -56,6 +64,7 @@ namespace Orleans.TestingHost
             await StopSiloAsync(ct);
         }
 
+        /// <inheritdoc />
         public override async Task StopSiloAsync(CancellationToken ct)
         {
             if (!IsActive) return;
@@ -94,6 +103,7 @@ namespace Orleans.TestingHost
             }
         }
 
+        /// <inheritdoc />
         public override async ValueTask DisposeAsync()
         {
             if (!this.IsActive) return;

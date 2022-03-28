@@ -13,11 +13,23 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography.X509Certificates;
+using System.Reflection;
+using System.Threading.Tasks;
 
 namespace Orleans.Serialization
 {
+    /// <summary>
+    /// Extensions for <see cref="IServiceCollection"/>.
+    /// </summary>
     public static class ServiceCollectionExtensions
     {
+        /// <summary>
+        /// Adds serializer support.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
+        /// <param name="configure">The configuration delegate.</param>
+        /// <returns>The service collection.</returns>
         public static IServiceCollection AddSerializer(this IServiceCollection services, Action<ISerializerBuilder> configure = null)
         {
             // Only add the services once.

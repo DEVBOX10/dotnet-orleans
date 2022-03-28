@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 
 namespace Orleans.Runtime
 {
+    /// <summary>
+    /// A grain call filter which helps to propagate activity correlation information across a call chain.
+    /// </summary>
     internal abstract class ActivityPropagationGrainCallFilter
     {
         protected const string TraceParentHeaderName = "traceparent";
@@ -55,15 +58,23 @@ namespace Orleans.Runtime
         }
     }
 
+    /// <summary>
+    /// Propagates distributed context information to outgoing requests.
+    /// </summary>
     internal class ActivityPropagationOutgoingGrainCallFilter : ActivityPropagationGrainCallFilter, IOutgoingGrainCallFilter
     {
         private readonly DistributedContextPropagator propagator;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ActivityPropagationOutgoingGrainCallFilter"/> class.
+        /// </summary>
+        /// <param name="propagator">The context propagator.</param>
         public ActivityPropagationOutgoingGrainCallFilter(DistributedContextPropagator propagator)
         {
             this.propagator = propagator;
         }
 
+        /// <inheritdoc />
         public Task Invoke(IOutgoingGrainCallContext context)
         {
             var activity = activitySource.StartActivity(ActivityNameOut, ActivityKind.Client);
@@ -81,31 +92,40 @@ namespace Orleans.Runtime
 
     }
 
+    /// <summary>
+    /// Populates distributed context information from incoming requests.
+    /// </summary>
     internal class ActivityPropagationIncomingGrainCallFilter : ActivityPropagationGrainCallFilter, IIncomingGrainCallFilter
     {
         private readonly DistributedContextPropagator propagator;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ActivityPropagationIncomingGrainCallFilter"/> class.
+        /// </summary>
+        /// <param name="propagator">The context propagator.</param>
         public ActivityPropagationIncomingGrainCallFilter(DistributedContextPropagator propagator)
         {
             this.propagator = propagator;
         }
 
+        /// <inheritdoc />
         public Task Invoke(IIncomingGrainCallContext context)
         {
-            var activity = activitySource.CreateActivity(ActivityNameIn, ActivityKind.Server);
-            if (activity is not null)
-            {
-                propagator.ExtractTraceIdAndState(null,
-                    static (object carrier, string fieldName, out string fieldValue, out IEnumerable<string> fieldValues) =>
-                    {
-                        fieldValues = default;
-                        fieldValue = RequestContext.Get(fieldName) as string;
-                    },
-                    out var traceParent,
-                    out var traceState);
-                if (!string.IsNullOrEmpty(traceParent))
+            Activity activity = default;
+
+            propagator.ExtractTraceIdAndState(null,
+                static (object carrier, string fieldName, out string fieldValue, out IEnumerable<string> fieldValues) =>
                 {
-                    activity.SetParentId(traceParent);
+                    fieldValues = default;
+                    fieldValue = RequestContext.Get(fieldName) as string;
+                },
+                out var traceParent,
+                out var traceState);
+            if (!string.IsNullOrEmpty(traceParent))
+            {
+                activity = activitySource.CreateActivity(ActivityNameIn, ActivityKind.Server, traceParent);
+                if (activity is not null)
+                {
                     if (!string.IsNullOrEmpty(traceState))
                     {
                         activity.TraceStateString = traceState;
@@ -123,6 +143,14 @@ namespace Orleans.Runtime
                         }
                     }
                 }
+            }
+            else
+            {
+                activity = activitySource.CreateActivity(ActivityNameIn, ActivityKind.Server);
+            }
+
+            if (activity is not null)
+            {
                 activity.Start();
             }
             return Process(context, activity);

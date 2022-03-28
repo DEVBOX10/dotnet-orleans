@@ -16,8 +16,14 @@ namespace Orleans.Metadata
         private readonly TypeConverter _typeConverter;
 
         /// <summary>
-        /// Creates a <see cref="GrainTypeResolver"/> instance.
+        /// Initializes a new instance of the <see cref="GrainTypeResolver"/> class.
         /// </summary>
+        /// <param name="resolvers">
+        /// The grain type name providers.
+        /// </param>
+        /// <param name="argumentFormatter">
+        /// The type converter, used to format generic parameters.
+        /// </param>
         public GrainTypeResolver(
             IEnumerable<IGrainTypeProvider> resolvers,
             TypeConverter argumentFormatter)
@@ -33,9 +39,9 @@ namespace Orleans.Metadata
         /// <returns>The grain type for the provided class.</returns>
         public GrainType GetGrainType(Type type)
         {
-            if (!type.IsClass)
+            if (!type.IsClass || type.IsAbstract)
             {
-                throw new ArgumentException($"Argument {nameof(type)} must be a class. Provided value, \"{type}\", is not a class.", nameof(type));
+                throw new ArgumentException($"Argument {nameof(type)} must be a non-abstract class. Provided value, \"{type}\", is not a class.", nameof(type));
             }
 
             // Configured providers take precedence

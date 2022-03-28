@@ -21,7 +21,7 @@ namespace Orleans.Runtime
     /// MUST lock this object for any concurrent access
     /// Consider: compartmentalize by usage, e.g., using separate interfaces for data for catalog, etc.
     /// </summary>
-    internal class ActivationData : IActivationData, IGrainExtensionBinder, ICollectibleGrainContext, IAsyncDisposable, IActivationWorkingSetMember, IGrainTimerRegistry, IGrainManagementExtension
+    internal class ActivationData : IGrainContext, ICollectibleGrainContext, IGrainExtensionBinder, IActivationWorkingSetMember, IGrainTimerRegistry, IGrainManagementExtension, IAsyncDisposable
     {
         private readonly GrainTypeSharedContext _shared;
         private readonly IServiceScope serviceScope;
@@ -66,7 +66,7 @@ namespace Orleans.Runtime
         }
 
         public IGrainRuntime GrainRuntime => _shared.Runtime;
-        public IAddressable GrainInstance { get; private set; }
+        public object GrainInstance { get; private set; }
         public GrainAddress Address { get; }
         public GrainReference GrainReference => _selfReference ??= _shared.GrainReferenceActivator.CreateReference(GrainId, default);
         public ActivationState State { get; private set; }
@@ -244,7 +244,7 @@ namespace Orleans.Runtime
             _components[typeof(TComponent)] = instance;
         }
 
-        internal void SetGrainInstance(Grain grainInstance)
+        internal void SetGrainInstance(object grainInstance)
         {
             switch (GrainInstance, grainInstance)
             {
@@ -278,12 +278,12 @@ namespace Orleans.Runtime
         /// <returns>Returns LimitExceededException if overloaded, otherwise <c>null</c>c></returns>
         public LimitExceededException CheckOverloaded()
         {
-            string limitName = LimitNames.LIMIT_MAX_ENQUEUED_REQUESTS;
+            string limitName = nameof(SiloMessagingOptions.MaxEnqueuedRequestsHardLimit);
             int maxRequestsHardLimit = _shared.MessagingOptions.MaxEnqueuedRequestsHardLimit;
             int maxRequestsSoftLimit = _shared.MessagingOptions.MaxEnqueuedRequestsSoftLimit;
             if (IsStatelessWorker)
             {
-                limitName = LimitNames.LIMIT_MAX_ENQUEUED_REQUESTS_STATELESS_WORKER;
+                limitName = nameof(SiloMessagingOptions.MaxEnqueuedRequestsHardLimit_StatelessWorker);
                 maxRequestsHardLimit = _shared.MessagingOptions.MaxEnqueuedRequestsHardLimit_StatelessWorker;
                 maxRequestsSoftLimit = _shared.MessagingOptions.MaxEnqueuedRequestsSoftLimit_StatelessWorker;
             }
@@ -380,31 +380,25 @@ namespace Orleans.Runtime
             _workSignal.Signal();
         }
 
-        public void Deactivate(CancellationToken? token = default)
+        public void Deactivate(DeactivationReason reason, CancellationToken? token = default)
         {
             if (!token.HasValue)
             {
                 token = new CancellationTokenSource(_shared.InternalRuntime.CollectionOptions.Value.DeactivationTimeout).Token;
             }
             
-            StartDeactivating();
+            StartDeactivating(reason);
             ScheduleOperation(new Command.Deactivate(token.Value));
-        }
-
-        public async Task DeactivateAsync(CancellationToken? token)
-        {
-            Deactivate(token);
-            await GetDeactivationCompletionSource().Task;
         }
 
         private void DeactivateStuckActivation()
         {
             IsStuckProcessingMessage = true;
-            var msg = $"Activation {this} has been processing request {_blockingRequest} since {_busyDuration} and is likely stuck";
-            DeactivationReason = new(DeactivationReasonCode.StuckProcessingMessage, msg);
+            var msg = $"Activation {this} has been processing request {_blockingRequest} since {_busyDuration} and is likely stuck.";
+            var reason = new DeactivationReason(DeactivationReasonCode.ActivationUnresponsive, msg);
 
             // Mark the grain as deactivating so that messages are forwarded instead of being invoked
-            Deactivate(token: default);
+            Deactivate(reason, token: default);
 
             // Try to remove this activation from the catalog and directory
             // This leaves this activation dangling, stuck processing the current request until it eventually completes
@@ -742,48 +736,57 @@ namespace Orleans.Runtime
                         }
 
                         message = _waitingRequests[i].Message;
-                        if (!MayInvokeRequest(message))
+                        try
                         {
-                            // The activation is not able to process this message right now, so try the next message.
-                            ++i;
-
-                            if (_blockingRequest != null)
+                            if (!MayInvokeRequest(message))
                             {
-                                var currentRequestActiveTime = _busyDuration.Elapsed;
-                                if (currentRequestActiveTime > _shared.MaxRequestProcessingTime && !IsStuckProcessingMessage)
+                                // The activation is not able to process this message right now, so try the next message.
+                                ++i;
+
+                                if (_blockingRequest != null)
                                 {
-                                    DeactivateStuckActivation();
+                                    var currentRequestActiveTime = _busyDuration.Elapsed;
+                                    if (currentRequestActiveTime > _shared.MaxRequestProcessingTime && !IsStuckProcessingMessage)
+                                    {
+                                        DeactivateStuckActivation();
+                                    }
+                                    else if (currentRequestActiveTime > _shared.MaxWarningRequestProcessingTime)
+                                    {
+                                        // Consider: Handle long request detection for reentrant activations -- this logic only works for non-reentrant activations
+                                        _shared.Logger.LogWarning(
+                                            (int)ErrorCode.Dispatcher_ExtendedMessageProcessing,
+                                            "Current request has been active for {CurrentRequestActiveTime} for grain {Grain}. Currently executing {BlockingRequest}. Trying to enqueue {Message}.",
+                                            currentRequestActiveTime,
+                                            ToDetailedString(),
+                                            _blockingRequest,
+                                            message);
+                                    }
                                 }
-                                else if (currentRequestActiveTime > _shared.MaxWarningRequestProcessingTime)
-                                {
-                                    // Consider: Handle long request detection for reentrant activations -- this logic only works for non-reentrant activations
-                                    _shared.Logger.LogWarning(
-                                        (int)ErrorCode.Dispatcher_ExtendedMessageProcessing,
-                                        "Current request has been active for {CurrentRequestActiveTime} for grain {Grain}. Currently executing {BlockingRequest}. Trying to enqueue {Message}.",
-                                        currentRequestActiveTime,
-                                        ToDetailedString(),
-                                        _blockingRequest,
-                                        message);
-                                }
+
+                                continue;
                             }
 
-                            continue;
+                            // If the current message is incompatible, deactivate this activation and eventually forward the message to a new incarnation.
+                            if (message.InterfaceVersion > 0)
+                            {
+                                var compatibilityDirector = _shared.InternalRuntime.CompatibilityDirectorManager.GetDirector(message.InterfaceType);
+                                var currentVersion = _shared.InternalRuntime.GrainVersionManifest.GetLocalVersion(message.InterfaceType);
+                                if (!compatibilityDirector.IsCompatible(message.InterfaceVersion, currentVersion))
+                                {
+                                    var reason = new DeactivationReason(
+                                        DeactivationReasonCode.IncompatibleRequest,
+                                        $"Received incompatible request for interface {message.InterfaceType} version {message.InterfaceVersion}. This activation supports interface version {currentVersion}.");
+
+                                    Deactivate(reason, token: default);
+                                    return;
+                                }
+                            }
                         }
-
-                        // If the current message is incompatible, deactivate this activation and eventually forward the message to a new incarnation.
-                        if (message.InterfaceVersion > 0)
+                        catch (Exception exception)
                         {
-                            var compatibilityDirector = _shared.InternalRuntime.CompatibilityDirectorManager.GetDirector(message.InterfaceType);
-                            var currentVersion = _shared.InternalRuntime.GrainVersionManifest.GetLocalVersion(message.InterfaceType);
-                            if (!compatibilityDirector.IsCompatible(message.InterfaceVersion, currentVersion))
-                            {
-                                DeactivationReason = new(
-                                    DeactivationReasonCode.IncompatibleRequest,
-                                    $"Received incompatible request for interface {message.InterfaceType} version {message.InterfaceVersion}. This activation supports version {currentVersion}");
-
-                                Deactivate(token: default);
-                                return;
-                            }
+                            _shared.InternalRuntime.MessageCenter.RejectMessage(message, Message.RejectionTypes.Transient, exception);
+                            _waitingRequests.RemoveAt(i);
+                            continue;
                         }
 
                         // Process this message, removing it from the queue.
@@ -791,25 +794,25 @@ namespace Orleans.Runtime
 
                         Debug.Assert(State == ActivationState.Valid);
                         RecordRunning(message, message.IsAlwaysInterleave);
-
-                        void RecordRunning(Message message, bool isInterleavable)
-                        {
-                            var stopwatch = CoarseStopwatch.StartNew();
-                            _runningRequests.Add(message, stopwatch);
-
-                            if (_blockingRequest != null || isInterleavable) return;
-
-                            // This logic only works for non-reentrant activations
-                            // Consider: Handle long request detection for reentrant activations.
-                            _blockingRequest = message;
-                            _busyDuration = stopwatch;
-                        }
                     }
 
                     // Start invoking the message outside of the lock
                     InvokeIncomingRequest(message);
                 }
                 while (true);
+            }
+
+            void RecordRunning(Message message, bool isInterleavable)
+            {
+                var stopwatch = CoarseStopwatch.StartNew();
+                _runningRequests.Add(message, stopwatch);
+
+                if (_blockingRequest != null || isInterleavable) return;
+
+                // This logic only works for non-reentrant activations
+                // Consider: Handle long request detection for reentrant activations.
+                _blockingRequest = message;
+                _busyDuration = stopwatch;
             }
 
             void ProcessRequestsToInvalidActivation()
@@ -822,15 +825,23 @@ namespace Orleans.Runtime
 
                 if (State is ActivationState.Deactivating)
                 {
+                    // Determine whether to declare this activation as stuck
                     var deactivatingTime = DateTime.UtcNow - DeactivationStartTime.Value;
                     if (deactivatingTime > _shared.MaxRequestProcessingTime && !IsStuckDeactivating)
                     {
                         IsStuckDeactivating = true;
-                        if (DeactivationReason.Text is { Length: > 0 })
+                        if (DeactivationReason.Description is { Length: > 0 } && DeactivationReason.ReasonCode != DeactivationReasonCode.ActivationUnresponsive)
                         {
                             var msg = $"Activation {this} has been deactivating since {DeactivationStartTime.Value} and is likely stuck";
-                            DeactivationReason = new(DeactivationReason.Code, DeactivationReason.Text + ". " + msg);
+                            DeactivationReason = new(DeactivationReasonCode.ActivationUnresponsive, DeactivationReason.Description + ". " + msg);
                         }
+                    }
+
+                    if (!IsStuckDeactivating && !IsStuckProcessingMessage)
+                    {
+                        // Do not forward messages while the grain is still deactivating and has not been declared stuck, since they
+                        // will be forwarded to the same grain instance.
+                        return;
                     }
                 }
 
@@ -872,7 +883,15 @@ namespace Orleans.Runtime
 
                 if (GetComponent<GrainCanInterleave>() is GrainCanInterleave canInterleave)
                 {
-                    return canInterleave.MayInterleave(incoming);
+                    try
+                    {
+                        return canInterleave.MayInterleave(incoming);
+                    }
+                    catch (Exception exception)
+                    {
+                        _shared.Logger?.LogError(exception, "Error invoking MayInterleave predicate on grain {Grain} for message {Message}", this, incoming);
+                        throw;
+                    }
                 }
 
                 return false;
@@ -1071,7 +1090,7 @@ namespace Orleans.Runtime
                     msgs,
                     Address,
                     forwardingAddress: null,
-                    failedOperation: DeactivationReason.Text,
+                    failedOperation: DeactivationReason.Description,
                     exc: DeactivationException,
                     rejectMessages: true);
             }
@@ -1089,7 +1108,7 @@ namespace Orleans.Runtime
 
                 if (_shared.Logger.IsEnabled(LogLevel.Debug)) _shared.Logger.LogDebug((int)ErrorCode.Catalog_RerouteAllQueuedMessages, "Rerouting {NumMessages} messages from invalid grain activation {Grain}", msgs.Count, this);
                 _shared.InternalRuntime.LocalGrainDirectory.InvalidateCacheEntry(Address);
-                _shared.InternalRuntime.MessageCenter.ProcessRequestsToInvalidActivation(msgs, Address, ForwardingAddress, DeactivationReason.Text, DeactivationException);
+                _shared.InternalRuntime.MessageCenter.ProcessRequestsToInvalidActivation(msgs, Address, ForwardingAddress, DeactivationReason.Description, DeactivationException);
             }
         }
 
@@ -1099,7 +1118,7 @@ namespace Orleans.Runtime
         {
             if (!cancellationToken.HasValue)
             {
-                cancellationToken = new CancellationTokenSource(_shared.InternalRuntime.CollectionOptions.Value.DeactivationTimeout).Token;
+                cancellationToken = new CancellationTokenSource(_shared.InternalRuntime.CollectionOptions.Value.ActivationTimeout).Token;
             }
 
             ScheduleOperation(new Command.Activate(requestContext, cancellationToken.Value));
@@ -1156,7 +1175,11 @@ namespace Orleans.Runtime
                 try
                 {
                     RequestContextExtensions.Import(requestContextData);
-                    await Lifecycle.OnStart(cancellationToken);
+                    await Lifecycle.OnStart(cancellationToken).WithCancellation(cancellationToken, "Timed out waiting for grain lifecycle to complete activation");
+                    if (GrainInstance is IGrainBase grainBase)
+                    {
+                        await grainBase.OnActivateAsync(cancellationToken).WithCancellation(cancellationToken, $"Timed out waiting for {nameof(IGrainBase.OnActivateAsync)} to complete");
+                    }
 
                     lock (this)
                     {
@@ -1185,8 +1208,10 @@ namespace Orleans.Runtime
                     lock (this)
                     {
                         SetState(ActivationState.FailedToActivate);
-                        DeactivationReason = new(DeactivationReasonCode.FailedToActivate, sourceException, "Failed to activate grain");
+                        DeactivationReason = new(DeactivationReasonCode.ActivationFailed, sourceException, "Failed to activate grain.");
                     }
+
+                    GetDeactivationCompletionSource().TrySetResult(true);
 
                     if (IsUsingGrainDirectory && ForwardingAddress is null)
                     {
@@ -1207,7 +1232,13 @@ namespace Orleans.Runtime
                     // Unregister this as a message target after some period of time.
                     // This is delayed so that consistently failing activation, perhaps due to an application bug or network
                     // issue, does not cause a flood of doomed activations.
-                    ScheduleOperation(new Command.Delay(TimeSpan.FromSeconds(5)));
+                    // If the cancellation token was canceled, there is no need to wait an additional time, since the activation
+                    // has already waited some significant amount of time.
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        ScheduleOperation(new Command.Delay(TimeSpan.FromSeconds(5)));
+                    }
+
                     ScheduleOperation(new Command.UnregisterFromCatalog());
 
                     lock (this)
@@ -1250,7 +1281,7 @@ namespace Orleans.Runtime
                         // Set the forwarding address so that messages enqueued on this activation can be forwarded to
                         // the existing activation.
                         ForwardingAddress = result;
-                        DeactivationReason = new(DeactivationReasonCode.DuplicateActivation, null, "Duplicate activation");
+                        DeactivationReason = new(DeactivationReasonCode.DuplicateActivation, "This grain has been activated elsewhere.");
                         success = false;
                         CounterStatistic
                             .FindOrCreate(StatisticNames.CATALOG_ACTIVATION_CONCURRENT_REGISTRATION_ATTEMPTS)
@@ -1285,7 +1316,7 @@ namespace Orleans.Runtime
                     }
 
                     UnregisterMessageTarget();
-                    DeactivationReason = new(DeactivationReasonCode.GrainDirectoryFailure, registrationException, "Failed to register activation in grain directory");
+                    DeactivationReason = new(DeactivationReasonCode.InternalFailure, registrationException, "Failed to register activation in grain directory.");
                     _shared.Logger.LogWarning((int)ErrorCode.Runtime_Error_100064, registrationException, "Failed to register grain {Grain} in grain directory", ToString());
                 }
             }
@@ -1299,7 +1330,7 @@ namespace Orleans.Runtime
         /// <summary>
         /// Starts the deactivation process.
         /// </summary>
-        public void StartDeactivating()
+        public void StartDeactivating(DeactivationReason reason)
         {
             lock (this)
             {
@@ -1313,9 +1344,9 @@ namespace Orleans.Runtime
                     throw new InvalidOperationException("Calling DeactivateOnIdle from within OnActivateAsync is not supported");
                 }
 
-                if (DeactivationReason.Code == DeactivationReasonCode.None)
+                if (DeactivationReason.ReasonCode == DeactivationReasonCode.None)
                 {
-                    DeactivationReason = new(DeactivationReasonCode.ActivationInitiated, "DeactivateOnIdle");
+                    DeactivationReason = reason;
                 }
 
                 DeactivationStartTime = DateTime.UtcNow;
@@ -1342,10 +1373,9 @@ namespace Orleans.Runtime
                     _shared.Logger.LogTrace("FinishDeactivating activation {Activation}", this.ToDetailedString());
                 }
 
-                StartDeactivating();
                 StopAllTimers();
 
-                // Wait timers and call OnDeactivateAsync()
+                // Wait timers and call OnDeactivateAsync(reason, cancellationToken)
                 await WaitForAllTimersToFinish(cancellationToken);
                 await CallGrainDeactivate(cancellationToken);
 
@@ -1405,7 +1435,7 @@ namespace Orleans.Runtime
                 try
                 {
                     // Note: This call is being made from within Scheduler.Queue wrapper, so we are already executing on worker thread
-                    if (_shared.Logger.IsEnabled(LogLevel.Debug)) _shared.Logger.Debug(ErrorCode.Catalog_BeforeCallingDeactivate, "About to call {1} grain's OnDeactivateAsync() method {0}", this, GrainInstance?.GetType().FullName);
+                    if (_shared.Logger.IsEnabled(LogLevel.Debug)) _shared.Logger.Debug(ErrorCode.Catalog_BeforeCallingDeactivate, "About to call {1} grain's OnDeactivateAsync(...) method {0}", this, GrainInstance?.GetType().FullName);
 
                     // Call OnDeactivateAsync inline, but within try-catch wrapper to safely capture any exceptions thrown from called function
                     try
@@ -1414,15 +1444,20 @@ namespace Orleans.Runtime
                         if (State == ActivationState.Deactivating)
                         {
                             RequestContext.Clear(); // Clear any previous RC, so it does not leak into this call by mistake. 
-                            await Lifecycle.OnStop(ct).WithCancellation(ct);
+                            if (GrainInstance is IGrainBase grainBase)
+                            {
+                                await grainBase.OnDeactivateAsync(DeactivationReason, ct).WithCancellation(ct, $"Timed out waiting for {nameof(IGrainBase.OnDeactivateAsync)} to complete");
+                            }
+
+                            await Lifecycle.OnStop(ct).WithCancellation(ct, "Timed out waiting for grain lifecycle to complete deactivation");
                         }
 
-                        if (_shared.Logger.IsEnabled(LogLevel.Debug)) _shared.Logger.Debug(ErrorCode.Catalog_AfterCallingDeactivate, "Returned from calling {1} grain's OnDeactivateAsync() method {0}", this, GrainInstance?.GetType().FullName);
+                        if (_shared.Logger.IsEnabled(LogLevel.Debug)) _shared.Logger.Debug(ErrorCode.Catalog_AfterCallingDeactivate, "Returned from calling {1} grain's OnDeactivateAsync(...) method {0}", this, GrainInstance?.GetType().FullName);
                     }
                     catch (Exception exc)
                     {
                         _shared.Logger.Error(ErrorCode.Catalog_ErrorCallingDeactivate,
-                            string.Format("Error calling grain's OnDeactivateAsync() method - Grain type = {1} Activation = {0}", this, GrainInstance?.GetType().FullName), exc);
+                            string.Format("Error calling grain's OnDeactivateAsync(...) method - Grain type = {1} Activation = {0}", this, GrainInstance?.GetType().FullName), exc);
                     }
                 }
                 catch (Exception exc)
@@ -1443,7 +1478,7 @@ namespace Orleans.Runtime
 
         Task IGrainManagementExtension.DeactivateOnIdle()
         {
-            Deactivate();
+            Deactivate(new(DeactivationReasonCode.ApplicationRequested, $"{nameof(IGrainManagementExtension.DeactivateOnIdle)} was called."));
             return Task.CompletedTask;
         }
 
@@ -1520,41 +1555,5 @@ namespace Orleans.Runtime
             {
             }
         }
-    }
-
-    internal struct DeactivationReason
-    {
-        public DeactivationReason(DeactivationReasonCode code, string text)
-        {
-            Code = code;
-            Text = text;
-            Exception = null;
-        }
-
-        public DeactivationReason(DeactivationReasonCode code, Exception exception, string text)
-        {
-            Code = code;
-            Text = text;
-            Exception = exception;
-        }
-
-        public string Text { get; }
-        public DeactivationReasonCode Code { get; }
-
-        /// <summary>
-        /// If not null, contains the exception thrown during activation.
-        /// </summary>
-        public Exception Exception { get; }
-    }
-
-    internal enum DeactivationReasonCode : byte
-    {
-        None,
-        FailedToActivate,
-        GrainDirectoryFailure,
-        ActivationInitiated, // DeactivateOnIdle
-        StuckProcessingMessage,
-        DuplicateActivation,
-        IncompatibleRequest,
     }
 }

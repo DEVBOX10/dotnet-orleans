@@ -34,7 +34,8 @@ namespace Orleans.Runtime.Messaging
         private readonly Channel<Message> outgoingMessages;
         private readonly ChannelWriter<Message> outgoingMessageWriter;
         private readonly List<Message> inflight = new List<Message>(4);
-        private readonly TaskCompletionSource<int> _transportConnectionClosed = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<int> _transportConnectionClosed = new (TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<int> _initializationTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private IDuplexPipe _transport;
         private Task _processIncomingTask;
         private Task _processOutgoingTask;
@@ -71,6 +72,8 @@ namespace Orleans.Runtime.Messaging
         protected abstract IMessageCenter MessageCenter { get; }
 
         public bool IsValid => _closeTask is null;
+
+        public Task Initialized => _initializationTcs.Task;
 
         public static void ConfigureBuilder(ConnectionBuilder builder) => builder.Run(OnConnectedDelegate);
 
@@ -110,6 +113,7 @@ namespace Orleans.Runtime.Messaging
             _transport = this.Context.Transport;
             _processIncomingTask = this.ProcessIncoming();
             _processOutgoingTask = this.ProcessOutgoing();
+            _initializationTcs.TrySetResult(0);
             await Task.WhenAll(_processIncomingTask, _processOutgoingTask);
         }
 
@@ -136,16 +140,18 @@ namespace Orleans.Runtime.Messaging
 
         private void StartClosing(Exception exception)
         {
-            if (_closeTask is object)
+            if (_closeTask is not null)
             {
                 return;
             }
 
             var task = new Task<Task>(CloseAsync);
-            if (Interlocked.CompareExchange(ref _closeTask, task.Unwrap(), null) is object)
+            if (Interlocked.CompareExchange(ref _closeTask, task.Unwrap(), null) is not null)
             {
                 return;
             }
+
+            _initializationTcs.TrySetException(exception ?? new ConnectionAbortedException("Connection initialization failed"));
 
             if (this.Log.IsEnabled(LogLevel.Information))
             {
@@ -203,7 +209,16 @@ namespace Orleans.Runtime.Messaging
             // Only wait for the transport to close if the connection actually started being processed.
             if (_processIncomingTask is not null && _processOutgoingTask is not null)
             {
-                // Wait for the transport to signal that it's closed before disposing it.
+                // Abort the connection and wait for the transport to signal that it's closed before disposing it.
+                try
+                {
+                    this.Context.Abort();
+                }
+                catch (Exception exception)
+                {
+                    this.Log.LogWarning(exception, "Exception aborting connection {Connection}", this);
+                }
+
                 await _transportConnectionClosed.Task;
             }
 
@@ -446,22 +461,25 @@ namespace Orleans.Runtime.Messaging
             // The message body was not successfully decoded, but the headers were.
             MessagingStatisticsGroup.OnRejectedMessage(message);
 
-            if (message.Direction == Message.Directions.Request)
+            if (message.HasDirection)
             {
-                // Send a fast fail to the caller.
-                var response = this.MessageFactory.CreateResponseMessage(message);
-                response.Result = Message.ResponseTypes.Error;
-                response.BodyObject = Response.FromException(exception);
+                if (message.Direction == Message.Directions.Request)
+                {
+                    // Send a fast fail to the caller.
+                    var response = this.MessageFactory.CreateResponseMessage(message);
+                    response.Result = Message.ResponseTypes.Error;
+                    response.BodyObject = Response.FromException(exception);
 
-                // Send the error response and continue processing the next message.
-                this.Send(response);
-            }
-            else if (message.Direction == Message.Directions.Response)
-            {
-                // If the message was a response, propagate the exception to the intended recipient.
-                message.Result = Message.ResponseTypes.Error;
-                message.BodyObject = Response.FromException(exception);
-                this.MessageCenter.DispatchLocalMessage(message);
+                    // Send the error response and continue processing the next message.
+                    this.Send(response);
+                }
+                else if (message.Direction == Message.Directions.Response)
+                {
+                    // If the message was a response, propagate the exception to the intended recipient.
+                    message.Result = Message.ResponseTypes.Error;
+                    message.BodyObject = Response.FromException(exception);
+                    this.MessageCenter.DispatchLocalMessage(message);
+                }
             }
 
             // The exception has been handled by propagating it onwards.

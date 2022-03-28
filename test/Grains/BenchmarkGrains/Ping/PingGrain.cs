@@ -2,17 +2,26 @@ using Orleans;
 using BenchmarkGrainInterfaces.Ping;
 using System.Threading.Tasks;
 using Orleans.Runtime;
+using System.Threading;
 
 namespace BenchmarkGrains.Ping
 {
-    public class PingGrain : Grain, IPingGrain
+    public class PingGrain : IGrainBase, IPingGrain
     {
         private IPingGrain _self;
 
-        public override Task OnActivateAsync()
+        public PingGrain(IGrainContext context)
+        {
+            GrainContext = context;
+        }
+
+        public IGrainContext GrainContext { get; set; }
+
+        public Task OnActivateAsync(CancellationToken cancellationToken)
+
         {
             _self = this.AsReference<IPingGrain>();
-            return base.OnActivateAsync();
+            return Task.CompletedTask;
         }
 
         public ValueTask Run() => default;
@@ -22,7 +31,5 @@ namespace BenchmarkGrains.Ping
             if (count == 0) return default;
             return other.PingPongInterleave(_self, count - 1);
         }
-
-        public ValueTask<int> GetSiloPort() => new(((ILocalSiloDetails)ServiceProvider.GetService(typeof(ILocalSiloDetails))).SiloAddress.Endpoint.Port);
     }
 }

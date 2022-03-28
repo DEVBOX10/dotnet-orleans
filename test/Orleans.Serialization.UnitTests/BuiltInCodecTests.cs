@@ -1542,12 +1542,12 @@ namespace Orleans.Serialization.UnitTests
         private IEqualityComparer<string>[] _comparers = new IEqualityComparer<string>[]
         {
             new CaseInsensitiveEqualityComparer(),
-#if NETCOREAPP
+#if NETCOREAPP3_1_OR_GREATER
             StringComparer.Ordinal,
             StringComparer.OrdinalIgnoreCase,
             EqualityComparer<string>.Default,
 #endif
-#if NET6_0
+#if NET6_0_OR_GREATER
             StringComparer.InvariantCulture,
             StringComparer.InvariantCultureIgnoreCase,
             StringComparer.CurrentCulture,

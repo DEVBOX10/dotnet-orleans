@@ -14,6 +14,7 @@ using Microsoft.Extensions.Configuration.Memory;
 using Orleans.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting;
+using Orleans.TestingHost.InMemoryTransport;
 
 namespace Orleans.TestingHost
 {
@@ -31,6 +32,7 @@ namespace Orleans.TestingHost
         private readonly List<SiloHandle> additionalSilos = new List<SiloHandle>();
         private readonly TestClusterOptions options;
         private readonly StringBuilder log = new StringBuilder();
+        private readonly InMemoryTransportConnectionHub _transportHub = new();
         private bool _disposed;
         private int startedInstances;
 
@@ -117,7 +119,7 @@ namespace Orleans.TestingHost
         /// <summary>
         /// Delegate used to create and start an individual silo.
         /// </summary>
-        public Func<string, IConfiguration, Task<SiloHandle>> CreateSiloAsync { private get; set; } = InProcessSiloHandle.CreateAsync;
+        public Func<string, IConfiguration, Task<SiloHandle>> CreateSiloAsync { private get; set; }
 
         /// <summary>
         /// The port allocator.
@@ -135,6 +137,7 @@ namespace Orleans.TestingHost
             this.options = options;
             this.ConfigurationSources = configurationSources.ToArray();
             this.PortAllocator = portAllocator;
+            this.CreateSiloAsync = DefaultCreateSiloAsync;
         }
 
         /// <summary>
@@ -385,6 +388,10 @@ namespace Orleans.TestingHost
             await StopSiloAsync(Primary);
         }
 
+        /// <summary>
+        /// Stop cluster client as an asynchronous operation.
+        /// </summary>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         public async Task StopClusterClientAsync()
         {
             var client = this.ClientHost;
@@ -556,10 +563,34 @@ namespace Orleans.TestingHost
                 await StopClusterClientAsync();
             }
 
-            this.ClientHost = TestClusterHostFactory.CreateClusterClient("MainClient", this.ConfigurationSources);
+            var configurationBuilder = new ConfigurationBuilder();
+            foreach (var source in ConfigurationSources)
+            {
+                configurationBuilder.Add(source);
+            }
+            var configuration = configurationBuilder.Build();
+
+            this.ClientHost = TestClusterHostFactory.CreateClusterClient(
+                "MainClient",
+                configuration,
+                hostBuilder =>
+                {
+                    hostBuilder.UseOrleansClient((context, clientBuilder) =>
+                    {
+                        bool.TryParse(context.Configuration[nameof(TestClusterOptions.UseInMemoryTransport)], out var useInMemoryTransport);
+                        if (useInMemoryTransport)
+                        {
+                            clientBuilder.UseInMemoryConnectionTransport(_transportHub);
+                        }
+                    });
+                });
             await this.ClientHost.StartAsync();
         }
 
+        /// <summary>
+        /// Gets the configuration sources.
+        /// </summary>
+        /// <value>The configuration sources.</value>
         public IReadOnlyList<IConfigurationSource> ConfigurationSources { get; }
 
         private async Task InitializeAsync()
@@ -583,6 +614,27 @@ namespace Orleans.TestingHost
             {
                 await InitializeClientAsync();
             }
+        }
+
+        /// <summary>
+        /// Default value for <see cref="CreateSiloAsync"/>, which creates a new silo handle.
+        /// </summary>
+        /// <param name="siloName">Name of the silo.</param>
+        /// <param name="configuration">The configuration.</param>
+        /// <returns>The silo handle.</returns>
+        public async Task<SiloHandle> DefaultCreateSiloAsync(string siloName, IConfiguration configuration)
+        {
+            return await InProcessSiloHandle.CreateAsync(siloName, configuration, hostBuilder =>
+            {
+                hostBuilder.UseOrleans((context, siloBuilder) =>
+                {
+                    bool.TryParse(context.Configuration[nameof(TestClusterOptions.UseInMemoryTransport)], out var useInMemoryTransport);
+                    if (useInMemoryTransport)
+                    {
+                        siloBuilder.UseInMemoryConnectionTransport(_transportHub);
+                    }
+                });
+            });
         }
         
         /// <summary>
@@ -646,6 +698,10 @@ namespace Orleans.TestingHost
             }
         }
 
+        /// <summary>
+        /// Gets the log.
+        /// </summary>
+        /// <returns>The log contents.</returns>
         public string GetLog()
         {
             return this.log.ToString();
@@ -667,6 +723,7 @@ namespace Orleans.TestingHost
             Console.WriteLine(GetLog());
         }
 
+        /// <inheritdoc/>
         public async ValueTask DisposeAsync()
         {
             if (_disposed)
@@ -695,6 +752,7 @@ namespace Orleans.TestingHost
             _disposed = true;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             if (_disposed)

@@ -7,6 +7,13 @@ using Orleans.Storage;
 
 namespace Orleans.Core
 {
+
+    /// <summary>
+    /// Provides functionality for operating on grain state.
+    /// Implements the <see cref="Orleans.Core.IStorage{TState}" />
+    /// </summary>
+    /// <typeparam name="TState">The underlying state type.</typeparam>
+    /// <seealso cref="Orleans.Core.IStorage{TState}" />
     public class StateStorageBridge<TState> : IStorage<TState>
     {
         private readonly string name;
@@ -15,23 +22,26 @@ namespace Orleans.Core
         private readonly GrainState<TState> grainState;
         private readonly ILogger logger;
 
+        /// <inheritdoc/>
         public TState State
         {
             get
             {
-                GrainRuntime.CheckRuntimeContext();
+                GrainRuntime.CheckRuntimeContext(RuntimeContext.Current);
                 return grainState.State;
             }
 
             set
             {
-                GrainRuntime.CheckRuntimeContext();
+                GrainRuntime.CheckRuntimeContext(RuntimeContext.Current);
                 grainState.State = value;
             }
         }
 
+        /// <inheritdoc/>
         public string Etag => grainState.ETag;
 
+        /// <inheritdoc/>
         public bool RecordExists => grainState.RecordExists;
 
         public StateStorageBridge(string name, GrainReference grainRef, IGrainStorage store, ILoggerFactory loggerFactory)
@@ -48,17 +58,14 @@ namespace Orleans.Core
             this.grainState = new GrainState<TState>(Activator.CreateInstance<TState>());
         }
 
-        /// <summary>
-        /// Async method to cause refresh of the current grain state data from backing store.
-        /// Any previous contents of the grain state data will be overwritten.
-        /// </summary>
+        /// <inheritdoc />
         public async Task ReadStateAsync()
         {
             const string what = "ReadState";
             Stopwatch sw = Stopwatch.StartNew();
             try
             {
-                GrainRuntime.CheckRuntimeContext();
+                GrainRuntime.CheckRuntimeContext(RuntimeContext.Current);
 
                 await store.ReadStateAsync(name, grainRef, grainState);
 
@@ -82,15 +89,13 @@ namespace Orleans.Core
             }
         }
 
-        /// <summary>
-        /// Async method to cause write of the current grain state data into backing store.
-        /// </summary>
+        /// <inheritdoc />
         public async Task WriteStateAsync()
         {
             const string what = "WriteState";
             try
             {
-                GrainRuntime.CheckRuntimeContext();
+                GrainRuntime.CheckRuntimeContext(RuntimeContext.Current);
 
                 Stopwatch sw = Stopwatch.StartNew();
                 await store.WriteStateAsync(name, grainRef, grainState);
@@ -111,15 +116,13 @@ namespace Orleans.Core
             }
         }
 
-        /// <summary>
-        /// Async method to cause write of the current grain state data into backing store.
-        /// </summary>
+        /// <inheritdoc />
         public async Task ClearStateAsync()
         {
             const string what = "ClearState";
             try
             {
-                GrainRuntime.CheckRuntimeContext();
+                GrainRuntime.CheckRuntimeContext(RuntimeContext.Current);
 
                 Stopwatch sw = Stopwatch.StartNew();
                 // Clear (most likely Delete) state from external storage

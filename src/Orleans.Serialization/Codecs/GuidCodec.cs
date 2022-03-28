@@ -6,20 +6,35 @@ using System.Buffers;
 
 namespace Orleans.Serialization.Codecs
 {
+    /// <summary>
+    /// Serializer for <see cref="Guid"/>.
+    /// </summary>
     [RegisterSerializer]
     public sealed class GuidCodec : IFieldCodec<Guid>
     {
+        /// <summary>
+        /// The codec field type
+        /// </summary>
         public static readonly Type CodecFieldType = typeof(Guid);
         private const int Width = 16;
 
+        /// <inheritdoc/>
         void IFieldCodec<Guid>.WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, Guid value) => WriteField(ref writer, fieldIdDelta, expectedType, value);
 
+        /// <summary>
+        /// Writes a field.
+        /// </summary>
+        /// <typeparam name="TBufferWriter">The buffer writer type.</typeparam>
+        /// <param name="writer">The writer.</param>
+        /// <param name="fieldIdDelta">The field identifier delta.</param>
+        /// <param name="expectedType">The expected type.</param>
+        /// <param name="value">The value.</param>
         public static void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, Guid value) where TBufferWriter : IBufferWriter<byte>
         {
             ReferenceCodec.MarkValueField(writer.Session);
             writer.WriteFieldHeader(fieldIdDelta, expectedType, typeof(Guid), WireType.LengthPrefixed);
             writer.WriteVarUInt32(Width);
-#if NETCOREAPP
+#if NETCOREAPP3_1_OR_GREATER
             writer.EnsureContiguous(Width);
             if (value.TryWriteBytes(writer.WritableSpan))
             {
@@ -30,8 +45,16 @@ namespace Orleans.Serialization.Codecs
             writer.Write(value.ToByteArray());
         }
 
+        /// <inheritdoc/>
         Guid IFieldCodec<Guid>.ReadValue<TInput>(ref Reader<TInput> reader, Field field) => ReadValue(ref reader, field);
-
+                
+        /// <summary>
+        /// Reads a value.
+        /// </summary>
+        /// <typeparam name="TInput">The reader input type.</typeparam>
+        /// <param name="reader">The reader.</param>
+        /// <param name="field">The field.</param>
+        /// <returns>The value.</returns>
         public static Guid ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
             ReferenceCodec.MarkValueField(reader.Session);
@@ -47,7 +70,7 @@ namespace Orleans.Serialization.Codecs
                 throw new UnexpectedLengthPrefixValueException(nameof(Guid), Width, length);
             }
 
-#if NETCOREAPP
+#if NETCOREAPP3_1_OR_GREATER
             if (reader.TryReadBytes(Width, out var readOnly))
             {
                 return new Guid(readOnly);
@@ -69,9 +92,13 @@ namespace Orleans.Serialization.Codecs
             $"Only a {nameof(WireType)} value of {WireType.LengthPrefixed} is supported for {nameof(Guid)} fields. {field}");
     }
 
+    /// <summary>
+    /// Copier for <see cref="Guid"/>.
+    /// </summary>
     [RegisterCopier]
     public sealed class GuidCopier : IDeepCopier<Guid>
     {
+        /// <inheritdoc/>
         public Guid DeepCopy(Guid input, CopyContext _) => input;
     }
 }

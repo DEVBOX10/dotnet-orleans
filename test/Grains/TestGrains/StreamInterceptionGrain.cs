@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System.Threading;
+using System.Threading.Tasks;
 using Orleans;
 using Orleans.Streams;
 using UnitTests.GrainInterfaces;
@@ -9,8 +10,8 @@ namespace UnitTests.Grains
     public class StreamInterceptionGrain : Grain, IStreamInterceptionGrain, IIncomingGrainCallFilter
     {
         private int lastStreamValue;
-        
-        public override async Task OnActivateAsync()
+
+        public override async Task OnActivateAsync(CancellationToken cancellationToken)
         {
             var streams = this.GetStreamProvider("SMSProvider");
             var stream = streams.GetStream<int>(this.GetPrimaryKey(), "InterceptedStream");
@@ -20,7 +21,7 @@ namespace UnitTests.Grains
                     this.lastStreamValue = value;
                     return Task.CompletedTask;
                 });
-            await base.OnActivateAsync();
+            await base.OnActivateAsync(cancellationToken);
         }
 
         public Task<int> GetLastStreamValue() => Task.FromResult(this.lastStreamValue);

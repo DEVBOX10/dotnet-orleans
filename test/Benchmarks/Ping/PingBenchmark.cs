@@ -12,11 +12,12 @@ using Microsoft.Extensions.Hosting;
 using Orleans;
 using Orleans.Configuration;
 using Orleans.Hosting;
+using Orleans.Runtime;
 
 namespace Benchmarks.Ping
 {
     [MemoryDiagnoser]
-    public class PingBenchmark : IDisposable 
+    public class PingBenchmark : IDisposable
     {
         private readonly ConsoleCancelEventHandler _onCancelEvent;
         private readonly List<IHost> hosts = new List<IHost>();
@@ -31,7 +32,7 @@ namespace Benchmarks.Ping
             for (var i = 0; i < numSilos; ++i)
             {
                 var primary = i == 0 ? null : new IPEndPoint(IPAddress.Loopback, 11111);
-                var hostBuilder = new HostBuilder().UseOrleans(siloBuilder =>
+                var hostBuilder = new HostBuilder().UseOrleans((ctx, siloBuilder) =>
                 {
                     siloBuilder.UseLocalhostClustering(
                         siloPort: 11111 + i,
@@ -54,7 +55,7 @@ namespace Benchmarks.Ping
 
             if (startClient)
             {
-                var hostBuilder = new HostBuilder().UseOrleansClient(clientBuilder =>
+                var hostBuilder = new HostBuilder().UseOrleansClient((ctx, clientBuilder) =>
                 {
                     clientBuilder.Configure<ClusterOptions>(options => options.ClusterId = options.ServiceId = "dev");
 
@@ -137,22 +138,25 @@ namespace Benchmarks.Ping
 
         public async Task Shutdown()
         {
-            await this.clientHost.StopAsync();
-            if (clientHost is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
-            else clientHost.Dispose();
+            if (clientHost is { } client)
+            {
+                await client.StopAsync();
+                if (client is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+                else client.Dispose();
+            }
 
             this.hosts.Reverse();
-            foreach (var h in this.hosts)
+            foreach (var host in this.hosts)
             {
-                await h.StopAsync();
-                h.Dispose();
+                await host.StopAsync();
+                host.Dispose();
             }
         }
 
         [GlobalCleanup]
         public void Dispose()
         {
-            (this.client as IDisposable)?.Dispose(); 
+            (this.client as IDisposable)?.Dispose();
             this.hosts.ForEach(h => h.Dispose());
 
             Console.CancelKeyPress -= _onCancelEvent;

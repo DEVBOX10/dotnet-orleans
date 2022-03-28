@@ -271,7 +271,7 @@ namespace Orleans.Runtime
                             {
                                 invokable.SetTarget(target);
                                 CancellationSourcesExtension.RegisterCancellationTokens(target, invokable);
-                                if (GrainCallFilters is { Count: > 0 } || target is IIncomingGrainCallFilter)
+                                if (GrainCallFilters is { Count: > 0 } || target.GrainInstance is IIncomingGrainCallFilter)
                                 {
                                     var invoker = new GrainMethodInvoker(target, invokable, GrainCallFilters, this.interfaceToImplementationMapping, this.responseCopier);
                                     await invoker.Invoke();
@@ -313,8 +313,9 @@ namespace Orleans.Runtime
                         // Mark the exception so that it doesn't deactivate any other activations.
                         ise.IsSourceActivation = false;
 
-                        this.invokeExceptionLogger.Info($"Deactivating {target} due to inconsistent state.");
-                        this.DeactivateOnIdle(target.GrainId);
+                        var msg = $"Deactivating {target} due to inconsistent state.";
+                        this.invokeExceptionLogger.Info(msg);
+                        target.Deactivate(new DeactivationReason(DeactivationReasonCode.ApplicationError, LogFormatter.PrintException(invocationException)));
                     }
                 }
 
@@ -523,12 +524,6 @@ namespace Orleans.Runtime
             {
                 throw new InvalidOperationException("Cannot delete a local object reference from a grain.");
             }
-        }
-
-        public void DeactivateOnIdle(GrainId id)
-        {
-            if (!Catalog.TryGetActivationData(id, out var data)) return; // already gone
-            _ = data.DeactivateAsync();
         }
 
         private Task OnRuntimeInitializeStop(CancellationToken tc)

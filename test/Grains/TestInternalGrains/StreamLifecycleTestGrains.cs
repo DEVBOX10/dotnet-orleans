@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -17,7 +18,7 @@ namespace UnitTests.Grains
     [GenerateSerializer]
     public class StreamLifecycleTestGrainState
     {
-        // For producer and consumer 
+        // For producer and consumer
         // -- only need to store this because of how we run our unit tests against multiple providers
         [Id(0)]
         public string StreamProviderName { get; set; }
@@ -169,7 +170,7 @@ namespace UnitTests.Grains
 
         protected IDictionary<StreamSubscriptionHandle<int>, MyStreamObserver<int>> Observers { get; set; }
 
-        public override async Task OnActivateAsync()
+        public override async Task OnActivateAsync(CancellationToken cancellationToken)
         {
             if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("OnActivateAsync");
 
@@ -199,7 +200,7 @@ namespace UnitTests.Grains
                 if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Not conected to stream yet.");
             }
         }
-        public override async Task OnDeactivateAsync()
+        public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
         {
             if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("OnDeactivateAsync");
             await RecordDeactivate();
@@ -242,7 +243,6 @@ namespace UnitTests.Grains
 
             //var subsHandle = await State.Stream.SubscribeAsync(observer);
 
-            var context = this.Data;
             var (myExtension, myExtensionReference) = this.streamProviderRuntime.BindExtension<StreamConsumerExtension, IStreamConsumerExtension>(
                 () => new StreamConsumerExtension(streamProviderRuntime));
             string extKey = providerName + "_" + Encoding.UTF8.GetString(State.Stream.StreamId.Namespace.ToArray());
@@ -287,7 +287,7 @@ namespace UnitTests.Grains
         {
         }
 
-        public override async Task OnActivateAsync()
+        public override async Task OnActivateAsync(CancellationToken cancellationToken)
         {
             if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("OnActivateAsync");
 
@@ -302,7 +302,8 @@ namespace UnitTests.Grains
                 if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Not connected to stream yet.");
             }
         }
-        public override async Task OnDeactivateAsync()
+
+        public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
         {
             if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("OnDeactivateAsync");
             await RecordDeactivate();

@@ -19,6 +19,7 @@ namespace Orleans.TestingHost
     {
         private readonly List<Action<IConfigurationBuilder>> configureHostConfigActions = new List<Action<IConfigurationBuilder>>();
         private readonly List<Action> configureBuilderActions = new List<Action>();
+        private Func<string, IConfiguration, Task<SiloHandle>> _createSiloAsync;
 
         /// <summary>
         /// Initializes a new instance of <see cref="TestClusterBuilder"/> using the default options.
@@ -59,13 +60,31 @@ namespace Orleans.TestingHost
         /// </summary>
         public Dictionary<string, string> Properties { get; } = new Dictionary<string, string>();
 
+        /// <summary>
+        /// Gets the options.
+        /// </summary>
+        /// <value>The options.</value>
         public TestClusterOptions Options { get; }
 
         /// <summary>
-        /// Delegate used to create and start an individual silo.
+        /// Gets or sets the delegate used to create and start an individual silo.
         /// </summary>
-        public Func<string, IConfiguration, Task<SiloHandle>> CreateSiloAsync { private get; set; }
+        public Func<string, IConfiguration, Task<SiloHandle>> CreateSiloAsync
+        {
+            private get => _createSiloAsync;
+            set
+            {
+                _createSiloAsync = value;
 
+                // The custom builder does not have access to the in-memory transport.
+                Options.UseInMemoryTransport = false;
+            }
+        }
+        
+        /// <summary>
+        /// Adds a configuration delegate to the builder
+        /// </summary>        
+        /// <param name="configureDelegate">The configuration delegate.</param>
         public TestClusterBuilder ConfigureBuilder(Action configureDelegate)
         {
             this.configureBuilderActions.Add(configureDelegate ?? throw new ArgumentNullException(nameof(configureDelegate)));
@@ -89,6 +108,7 @@ namespace Orleans.TestingHost
         /// Adds an implementation of <see cref="ISiloConfigurator"/> or <see cref="IHostConfigurator"/> to configure silos created by the test cluster.
         /// </summary>
         /// <typeparam name="T">The configurator type.</typeparam>
+        /// <returns>The builder.</returns>
         public TestClusterBuilder AddSiloBuilderConfigurator<T>() where T : new()
         {
             if (!typeof(ISiloConfigurator).IsAssignableFrom(typeof(T)) && !typeof(IHostConfigurator).IsAssignableFrom(typeof(T)))
@@ -100,12 +120,21 @@ namespace Orleans.TestingHost
             return this;
         }
 
+        /// <summary>
+        /// Adds the client builder configurator, which must implement <see cref="IClientBuilderConfigurator"/> or <see cref="IHostConfigurator"/>.
+        /// </summary>
+        /// <typeparam name="TClientBuilderConfigurator">The client builder type</typeparam>
+        /// <returns>The builder.</returns>
         public TestClusterBuilder AddClientBuilderConfigurator<TClientBuilderConfigurator>() where TClientBuilderConfigurator : IClientBuilderConfigurator, new()
         {
             this.Options.ClientBuilderConfiguratorTypes.Add(typeof(TClientBuilderConfigurator).AssemblyQualifiedName);
             return this;
         }
 
+        /// <summary>
+        /// Builds this instance.
+        /// </summary>
+        /// <returns>TestCluster.</returns>
         public TestCluster Build()
         {
             var portAllocator = this.PortAllocator;
@@ -129,10 +158,14 @@ namespace Orleans.TestingHost
             
             var configSources = new ReadOnlyCollection<IConfigurationSource>(configBuilder.Sources);
             var testCluster = new TestCluster(finalOptions, configSources, portAllocator);
-            if (this.CreateSiloAsync != null) testCluster.CreateSiloAsync = this.CreateSiloAsync;
+            if (CreateSiloAsync != null) testCluster.CreateSiloAsync = CreateSiloAsync;
             return testCluster;
         }
 
+        /// <summary>
+        /// Creates a cluster identifier.
+        /// </summary>
+        /// <returns>A new cluster identifier.</returns>
         public static string CreateClusterId()
         {
             string prefix = "testcluster-";
