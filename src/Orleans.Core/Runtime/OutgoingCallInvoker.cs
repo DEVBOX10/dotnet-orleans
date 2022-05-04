@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Orleans.CodeGeneration;
 using Orleans.Serialization.Invocation;
@@ -42,6 +41,8 @@ namespace Orleans.Runtime
             this.grainReference = grain;
             this.filters = filters;
             this.stages = filters.Length;
+            SourceContext = RuntimeContext.Current;
+
             if (request is IOutgoingGrainCallFilter requestFilter)
             {
                 this.requestFilter = requestFilter;
@@ -49,25 +50,18 @@ namespace Orleans.Runtime
             }
         }
 
-        /// <inheritdoc />
+        public IInvokable Request => this.request;
+
         public object Grain => this.grainReference;
 
-        /// <inheritdoc />
-        public MethodInfo Method => request.Method;
+        public MethodInfo InterfaceMethod => request.Method;
 
-        /// <inheritdoc />
-        public MethodInfo InterfaceMethod => this.Method;
-
-        /// <inheritdoc />
         public IMethodArguments Arguments => this;
 
-        /// <inheritdoc />
         public object Result { get => TypedResult; set => TypedResult = (TResult)value; }
 
-        /// <inheritdoc />
         public Response Response { get; set; }
 
-        /// <inheritdoc />
         public TResult TypedResult { get => Response.GetResult<TResult>(); set => Response = Response.FromResult(value); }
 
         object IMethodArguments.this[int index]
@@ -82,7 +76,18 @@ namespace Orleans.Runtime
 
         int IMethodArguments.Length => request.ArgumentCount;
 
-        /// <inheritdoc />
+        public IGrainContext SourceContext { get; }
+
+        public GrainId? SourceId => SourceContext is { } source ? source.GrainId : null;
+
+        public GrainId TargetId => grainReference.GrainId;
+
+        public GrainInterfaceType InterfaceType => grainReference.InterfaceType;
+
+        public string InterfaceName => request.InterfaceName;
+
+        public string MethodName => request.MethodName;
+
         public async Task Invoke()
         {
             try
