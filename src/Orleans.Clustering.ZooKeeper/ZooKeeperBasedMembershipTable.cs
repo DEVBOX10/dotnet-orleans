@@ -40,20 +40,22 @@ namespace Orleans.Runtime.Membership
 
         private const int ZOOKEEPER_CONNECTION_TIMEOUT = 2000;
 
-        private ZooKeeperWatcher watcher;
+        private readonly ZooKeeperWatcher watcher;
 
         /// <summary>
         /// The deployment connection string. for eg. "192.168.1.1,192.168.1.2/ClusterId"
         /// </summary>
-        private string deploymentConnectionString;
+        private readonly string deploymentConnectionString;
+
         /// <summary>
         /// the node name for this deployment. for eg. /ClusterId
         /// </summary>
-        private string clusterPath;
+        private readonly string clusterPath;
+
         /// <summary>
         /// The root connection string. for eg. "192.168.1.1,192.168.1.2"
         /// </summary>
-        private string rootConnectionString;
+        private readonly string rootConnectionString;
         
         public ZooKeeperBasedMembershipTable(
             ILogger<ZooKeeperBasedMembershipTable> logger, 
@@ -63,7 +65,9 @@ namespace Orleans.Runtime.Membership
             this.logger = logger;
             var options = membershipTableOptions.Value;
             watcher = new ZooKeeperWatcher(logger);
-            InitConfig(options.ConnectionString, clusterOptions.Value.ClusterId);
+            this.clusterPath = "/" + clusterOptions.Value.ClusterId;
+            rootConnectionString = options.ConnectionString;
+            deploymentConnectionString = options.ConnectionString + this.clusterPath;
         }
 
         /// <summary>
@@ -84,20 +88,13 @@ namespace Orleans.Runtime.Membership
                     await zk.createAsync(this.clusterPath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
                     await zk.sync(this.clusterPath);
                     //if we got here we know that we've just created the deployment path with version=0
-                    this.logger.Info("Created new deployment path: " + this.clusterPath);
+                    this.logger.LogInformation("Created new deployment path: {DeploymentPath}", this.clusterPath);
                 }
                 catch (KeeperException.NodeExistsException)
                 {
-                    this.logger.Debug("Deployment path already exists: " + this.clusterPath);
+                    this.logger.LogDebug("Deployment path already exists: {DeploymentPath}", this.clusterPath);
                 }
             });
-        }
-
-        private void InitConfig(string dataConnectionString, string clusterId)
-        {
-            this.clusterPath = "/" + clusterId;
-            deploymentConnectionString = dataConnectionString + this.clusterPath;
-            rootConnectionString = dataConnectionString;
         }
 
         /// <summary>
@@ -358,7 +355,7 @@ namespace Orleans.Runtime.Membership
         {
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.Debug(@event.ToString());
+                logger.LogDebug(@event.ToString());
             }
             return Task.CompletedTask;
         }

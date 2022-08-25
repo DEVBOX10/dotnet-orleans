@@ -53,9 +53,8 @@ namespace Orleans.AzureUtils
             }
             catch (Exception ex)
             {
-                string errorMsg = string.Format("Exception trying to create or connect to the Azure table: {0}", ex.Message);
-                instance.logger.Error((int)TableStorageErrorCode.AzureTable_33, errorMsg, ex);
-                throw new OrleansException(errorMsg, ex);
+                instance.logger.LogError((int)TableStorageErrorCode.AzureTable_33, ex, "Exception trying to create or connect to the Azure table {TableName}", instance.storage.TableName);
+                throw new OrleansException($"Exception trying to create or connect to the Azure table {instance.storage.TableName}", ex);
             }
             return instance;
         }
@@ -74,20 +73,20 @@ namespace Orleans.AzureUtils
         public void RegisterSiloInstance(SiloInstanceTableEntry entry)
         {
             entry.Status = INSTANCE_STATUS_CREATED;
-            logger.Info(ErrorCode.Runtime_Error_100270, "Registering silo instance: {0}", entry.ToString());
+            logger.LogInformation((int)ErrorCode.Runtime_Error_100270, "Registering silo instance: {Data}", entry.ToString());
             Task.WaitAll(new Task[] { storage.UpsertTableEntryAsync(entry) });
         }
 
         public Task<string> UnregisterSiloInstance(SiloInstanceTableEntry entry)
         {
             entry.Status = INSTANCE_STATUS_DEAD;
-            logger.Info(ErrorCode.Runtime_Error_100271, "Unregistering silo instance: {0}", entry.ToString());
+            logger.LogInformation((int)ErrorCode.Runtime_Error_100271, "Unregistering silo instance: {Data}", entry.ToString());
             return storage.UpsertTableEntryAsync(entry);
         }
 
         public Task<string> ActivateSiloInstance(SiloInstanceTableEntry entry)
         {
-            logger.Info(ErrorCode.Runtime_Error_100272, "Activating silo instance: {0}", entry.ToString());
+            logger.LogInformation((int)ErrorCode.Runtime_Error_100272, "Activating silo instance: {Data}", entry.ToString());
             entry.Status = INSTANCE_STATUS_ACTIVE;
             return storage.UpsertTableEntryAsync(entry);
         }
@@ -107,13 +106,13 @@ namespace Orleans.AzureUtils
             if (!string.IsNullOrEmpty(gateway.Generation))
                 int.TryParse(gateway.Generation, out gen);
 
-            SiloAddress address = SiloAddress.New(new IPEndPoint(IPAddress.Parse(gateway.Address), proxyPort), gen);
+            SiloAddress address = SiloAddress.New(IPAddress.Parse(gateway.Address), proxyPort, gen);
             return address.ToGatewayUri();
         }
 
         public async Task<IList<Uri>> FindAllGatewayProxyEndpoints()
         {
-            if (logger.IsEnabled(LogLevel.Debug)) logger.Debug(ErrorCode.Runtime_Error_100277, "Searching for active gateway silos for deployment {0}.", this.DeploymentId);
+            if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug((int)ErrorCode.Runtime_Error_100277, "Searching for active gateway silos for deployment {DeploymentId}.", this.DeploymentId);
 
             try
             {
@@ -123,11 +122,11 @@ namespace Orleans.AzureUtils
 
                 var gatewaySiloInstances = queryResults.Select(entity => ConvertToGatewayUri(entity.Item1)).ToList();
 
-                logger.Info(ErrorCode.Runtime_Error_100278, "Found {0} active Gateway Silos for deployment {1}.", gatewaySiloInstances.Count, this.DeploymentId);
+                logger.LogInformation((int)ErrorCode.Runtime_Error_100278, "Found {GatewaySiloCount} active Gateway Silos for deployment {DeploymentId}.", gatewaySiloInstances.Count, this.DeploymentId);
                 return gatewaySiloInstances;
             }catch(Exception exc)
             {
-                logger.Error(ErrorCode.Runtime_Error_100331, string.Format("Error searching for active gateway silos for deployment {0} ", this.DeploymentId), exc);
+                logger.LogError((int)ErrorCode.Runtime_Error_100331, exc, "Error searching for active gateway silos for deployment {DeploymentId} ", this.DeploymentId);
                 throw;
             }
         }
@@ -217,7 +216,7 @@ namespace Orleans.AzureUtils
 
             var asList = queryResults.ToList();
             if (asList.Count < 1 || asList.Count > 2)
-                throw new KeyNotFoundException(string.Format("Could not find table version row or found too many entries. Was looking for key {0}, found = {1}", siloAddress.ToLongString(), Utils.EnumerableToString(asList)));
+                throw new KeyNotFoundException(string.Format("Could not find table version row or found too many entries. Was looking for key {0}, found = {1}", siloAddress, Utils.EnumerableToString(asList)));
 
             int numTableVersionRows = asList.Count(tuple => tuple.Item1.RowKey == SiloInstanceTableEntry.TABLE_VERSION_ROW);
             if (numTableVersionRows < 1)
@@ -269,7 +268,7 @@ namespace Orleans.AzureUtils
                 string restStatus;
                 if (!AzureTableUtils.EvaluateException(exc, out httpStatusCode, out restStatus)) throw;
 
-                if (logger.IsEnabled(LogLevel.Trace)) logger.Trace("InsertSiloEntryConditionally failed with httpStatusCode={0}, restStatus={1}", httpStatusCode, restStatus);
+                if (logger.IsEnabled(LogLevel.Trace)) logger.LogTrace("InsertSiloEntryConditionally failed with httpStatusCode={StatusCode}, restStatus={RESTStatusCode}", httpStatusCode, restStatus);
                 if (AzureTableUtils.IsContentionError(httpStatusCode)) return false;
 
                 throw;
@@ -295,7 +294,7 @@ namespace Orleans.AzureUtils
                 string restStatus;
                 if (!AzureTableUtils.EvaluateException(exc, out httpStatusCode, out restStatus)) throw;
 
-                if (logger.IsEnabled(LogLevel.Trace)) logger.Trace("InsertSiloEntryConditionally failed with httpStatusCode={0}, restStatus={1}", httpStatusCode, restStatus);
+                if (logger.IsEnabled(LogLevel.Trace)) logger.LogTrace("InsertSiloEntryConditionally failed with httpStatusCode={StatusCode}, restStatus={RESTStatusCode}", httpStatusCode, restStatus);
                 if (AzureTableUtils.IsContentionError(httpStatusCode)) return false;
 
                 throw;
@@ -323,7 +322,7 @@ namespace Orleans.AzureUtils
                 string restStatus;
                 if (!AzureTableUtils.EvaluateException(exc, out httpStatusCode, out restStatus)) throw;
 
-                if (logger.IsEnabled(LogLevel.Trace)) logger.Trace("UpdateSiloEntryConditionally failed with httpStatusCode={0}, restStatus={1}", httpStatusCode, restStatus);
+                if (logger.IsEnabled(LogLevel.Trace)) logger.LogTrace("UpdateSiloEntryConditionally failed with httpStatusCode={StatusCode}, restStatus={RESTStatusCode}", httpStatusCode, restStatus);
                 if (AzureTableUtils.IsContentionError(httpStatusCode)) return false;
 
                 throw;

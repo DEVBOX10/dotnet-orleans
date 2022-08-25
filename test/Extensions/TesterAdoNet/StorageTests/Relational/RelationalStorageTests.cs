@@ -1,4 +1,4 @@
-﻿using Orleans;
+using Orleans;
 using Orleans.Runtime;
 using Orleans.Storage;
 using System.Threading.Tasks;
@@ -23,7 +23,6 @@ namespace UnitTests.StorageTests.Relational
            new[] { new OrleansStorageDefaultJsonDeserializer(new Newtonsoft.Json.JsonSerializerSettings(), AdoNetGrainStorage.JsonFormatSerializerTag)
         }, new[] { new OrleansStorageDefaultJsonSerializer(new Newtonsoft.Json.JsonSerializerSettings(), AdoNetGrainStorage.JsonFormatSerializerTag) });
 
-
         private IStorageSerializationPicker XmlPicker { get; } = new DefaultRelationalStoragePicker(
             new[] { new OrleansStorageDefaultXmlDeserializer(AdoNetGrainStorage.XmlFormatSerializerTag) },
             new[] { new OrleansStorageDefaultXmlSerializer(AdoNetGrainStorage.XmlFormatSerializerTag) });
@@ -33,7 +32,6 @@ namespace UnitTests.StorageTests.Relational
             new[] { new OrleansStorageDefaultXmlSerializer(AdoNetGrainStorage.XmlFormatSerializerTag) });
 
         private IStorageHasherPicker ConstantHasher { get; } = new StorageHasherPicker(new[] { new ConstantHasher() });
-
 
         /// <summary>
         /// The tests and assertions common across all back-ends are here.
@@ -57,23 +55,20 @@ namespace UnitTests.StorageTests.Relational
             var persistenceStorage = fixture.GetStorageProvider(adoNetInvariant).GetAwaiter().GetResult();
             if(persistenceStorage != null)
             {
-                PersistenceStorageTests = new CommonStorageTests(fixture.InternalGrainFactory, persistenceStorage);
+                PersistenceStorageTests = new CommonStorageTests(persistenceStorage);
             }
         }
 
-
-        internal async Task Relational_WriteReadWriteRead100StatesInParallel()
+        internal Task Relational_WriteReadWriteRead100StatesInParallel()
         {
-            await PersistenceStorageTests.PersistenceStorage_WriteReadWriteReadStatesInParallel(nameof(Relational_WriteReadWriteRead100StatesInParallel));
+            return PersistenceStorageTests.PersistenceStorage_WriteReadWriteReadStatesInParallel(nameof(Relational_WriteReadWriteRead100StatesInParallel));
         }
 
-
-        internal async Task Relational_HashCollisionTests()
+        internal Task Relational_HashCollisionTests()
         {
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).HashPicker = ConstantHasher;
-            await PersistenceStorageTests.PersistenceStorage_WriteReadWriteReadStatesInParallel(nameof(Relational_HashCollisionTests), 2);
+            return PersistenceStorageTests.PersistenceStorage_WriteReadWriteReadStatesInParallel(nameof(Relational_HashCollisionTests), 2);
         }
-
 
         internal async Task Relational_WriteDuplicateFailsWithInconsistentStateException()
         {
@@ -81,47 +76,41 @@ namespace UnitTests.StorageTests.Relational
             CommonStorageUtilities.AssertRelationalInconsistentExceptionMessage(exception.Message);
         }
 
-
         internal async Task Relational_WriteInconsistentFailsWithIncosistentStateException()
         {
             var exception = await PersistenceStorageTests.PersistenceStorage_WriteInconsistentFailsWithInconsistentStateException();
             CommonStorageUtilities.AssertRelationalInconsistentExceptionMessage(exception.Message);
         }
 
-
-        internal async Task Relational_Json_WriteRead(string grainType, GrainReference grainReference, GrainState<TestStateGeneric1<string>> grainState)
+        internal Task Relational_Json_WriteRead(string grainType, GrainId grainId, GrainState<TestStateGeneric1<string>> grainState)
         {
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).StorageSerializationPicker = JsonPicker;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            return PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
         }
 
-
-        internal async Task Relational_Json_WriteReadStreaming(string grainType, GrainReference grainReference, GrainState<TestStateGeneric1<string>> grainState)
+        internal Task Relational_Json_WriteReadStreaming(string grainType, GrainId grainId, GrainState<TestStateGeneric1<string>> grainState)
         {
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).StorageSerializationPicker = JsonStreamingPicker;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            return PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
         }
 
-
-        internal async Task Relational_Xml_WriteRead(string grainType, GrainReference grainReference, GrainState<TestStateGeneric1<string>> grainState)
+        internal Task Relational_Xml_WriteRead(string grainType, GrainId grainId, GrainState<TestStateGeneric1<string>> grainState)
         {
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).StorageSerializationPicker = XmlPicker;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            return PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
         }
 
-
-        internal async Task Relational_Xml_WriteReadStreaming(string grainType, GrainReference grainReference, GrainState<TestStateGeneric1<string>> grainState)
+        internal Task Relational_Xml_WriteReadStreaming(string grainType, GrainId grainId, GrainState<TestStateGeneric1<string>> grainState)
         {
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).StorageSerializationPicker = XmlStreamingPicker;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            return PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
         }
 
-
-        internal async Task Relational_ChangeStorageFormatFromBinaryToJsonInMemory_WriteRead(string grainType, GrainReference grainReference, GrainState<TestState1> grainState)
+        internal async Task Relational_ChangeStorageFormatFromBinaryToJsonInMemory_WriteRead(string grainType, GrainId grainId, GrainState<TestState1> grainState)
         {
             //Use the default binary serializer and deserializer. Now the data in the storage is in binary format.
             var initialVersion = grainState.ETag;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            await PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
             var firstVersion = grainState.ETag;
             Assert.NotEqual(initialVersion, firstVersion);
 
@@ -130,7 +119,7 @@ namespace UnitTests.StorageTests.Relational
             //new one to write and after that the new one used to both read and write data.
             //Change both the serializer and deserializer and do writing and reading once more just to be sure.
             ((AdoNetGrainStorage)PersistenceStorageTests.Storage).StorageSerializationPicker = JsonPicker;
-            await PersistenceStorageTests.Store_WriteRead(grainType, grainReference, grainState);
+            await PersistenceStorageTests.Store_WriteRead(grainType, grainId, grainState);
             var secondVersion = grainState.ETag;
             Assert.NotEqual(firstVersion, secondVersion);
         }

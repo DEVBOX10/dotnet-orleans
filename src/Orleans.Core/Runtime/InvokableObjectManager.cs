@@ -163,7 +163,8 @@ namespace Orleans
                     this.Running = true;
                 }
 
-                if (_manager.logger.IsEnabled(LogLevel.Trace)) _manager.logger.Trace($"InvokeLocalObjectAsync {message} start {start}");
+                if (_manager.logger.IsEnabled(LogLevel.Trace))
+                    _manager.logger.LogTrace("InvokeLocalObjectAsync {Message} start {Start}", message, start);
 
                 if (start)
                 {
@@ -215,11 +216,11 @@ namespace Orleans
 
                         if (message.IsExpired)
                         {
-                            _manager.messagingTrace.OnDropExpiredMessage(message, MessagingStatisticsGroup.Phase.Invoke);
+                            _manager.messagingTrace.OnDropExpiredMessage(message, MessagingInstruments.Phase.Invoke);
                             continue;
                         }
 
-                        RequestContextExtensions.Import(message.RequestContextData);
+                        RequestContextExtensions.Import(message.RequestContextData, message);
                         IInvokable request = null;
                         try
                         {
@@ -272,7 +273,7 @@ namespace Orleans
             {
                 if (message.IsExpired)
                 {
-                    _manager.messagingTrace.OnDropExpiredMessage(message, MessagingStatisticsGroup.Phase.Respond);
+                    _manager.messagingTrace.OnDropExpiredMessage(message, MessagingInstruments.Phase.Respond);
                     return;
                 }
 

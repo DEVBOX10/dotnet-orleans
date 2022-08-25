@@ -151,7 +151,7 @@ namespace Orleans.Runtime
 
             if (message.IsExpired)
             {
-                this.messagingTrace.OnDropExpiredMessage(message, MessagingStatisticsGroup.Phase.Receive);
+                this.messagingTrace.OnDropExpiredMessage(message, MessagingInstruments.Phase.Receive);
                 return true;
             }
 
@@ -200,7 +200,10 @@ namespace Orleans.Runtime
                     var more = await reader.WaitToReadAsync();
                     if (!more)
                     {
-                        this.logger.LogInformation($"{nameof(HostedClient)} completed processing all messages. Shutting down.");
+                        if (this.logger.IsEnabled(LogLevel.Debug))
+                        {
+                            this.logger.LogDebug($"{nameof(Runtime.HostedClient)} completed processing all messages. Shutting down.");
+                        }
                         break;
                     }
 
@@ -221,7 +224,7 @@ namespace Orleans.Runtime
                 }
                 catch (Exception exception)
                 {
-                    this.logger.LogError((int)ErrorCode.Runtime_Error_100326, "RunClientMessagePump has thrown an exception: {Exception}. Continuing.", exception);
+                    this.logger.LogError((int)ErrorCode.Runtime_Error_100326, exception, "RunClientMessagePump has thrown an exception. Continuing.");
                 }
             }
         }

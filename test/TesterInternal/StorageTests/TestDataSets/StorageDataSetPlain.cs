@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using Orleans;
 using System.Collections;
 using System.Collections.Generic;
 using Orleans.Runtime;
-
+using System.Linq;
 
 namespace UnitTests.StorageTests.Relational.TestDataSets
 {
@@ -11,8 +11,10 @@ namespace UnitTests.StorageTests.Relational.TestDataSets
     /// A set of simple test data set wit and without extension keys.
     /// </summary>
     /// <typeparam name="TGrainKey">The grain type (integer, guid or string)</typeparam>.
-    public sealed class StorageDataSetPlain<TGrainKey>: IEnumerable<object[]>
+    internal sealed class StorageDataSetPlain<TGrainKey>: IEnumerable<object[]>
     {
+        private const int NumCases = 3;
+
         /// <summary>
         /// The symbol set this data set uses.
         /// </summary>
@@ -23,38 +25,25 @@ namespace UnitTests.StorageTests.Relational.TestDataSets
         /// </summary>
         private const long StringLength = 15L;
 
-
-        private IEnumerable<object[]> DataSet { get; } = new[]
+        public static (string, GrainId, GrainState<TestState1>) GetTestData(int testNum) => testNum switch
         {
-            new object[]
-            {
+            0 => (
                 GrainTypeGenerator.GetGrainType<TGrainKey>(),
-                (Func<IInternalGrainFactory, GrainReference>)(grainFactory => RandomUtilities.GetRandomGrainReference<TGrainKey>(grainFactory, extensionKey: false)),
-                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 1, C = 4 } }
-            },
-            new object[]
-            {
+                RandomUtilities.GetRandomGrainId<TGrainKey>(),
+                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 1, C = 4 } }),
+            1 => (
                 GrainTypeGenerator.GetGrainType<TGrainKey>(),
-                (Func<IInternalGrainFactory, GrainReference>)(grainFactory => RandomUtilities.GetRandomGrainReference<TGrainKey>(grainFactory, true)),
-                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 2, C = 5 } }
-            },
-            new object[]
-            {
+                RandomUtilities.GetRandomGrainId<TGrainKey>(true),
+                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 2, C = 5 } }),
+            2 => (
                 GrainTypeGenerator.GetGrainType<TGrainKey>(),
-                (Func<IInternalGrainFactory, GrainReference>)(grainFactory => RandomUtilities.GetRandomGrainReference<TGrainKey>(grainFactory, true)),
-                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 3, C = 6 } }
-            }
+                RandomUtilities.GetRandomGrainId<TGrainKey>(true),
+                new GrainState<TestState1> { State = new TestState1 { A = RandomUtilities.GetRandomCharacters(Symbols, StringLength), B = 3, C = 6 } }),
+            _ => throw new IndexOutOfRangeException(),
+
         };
 
-        public IEnumerator<object[]> GetEnumerator()
-        {
-            return DataSet.GetEnumerator();
-        }
-
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        public IEnumerator<object[]> GetEnumerator() => Enumerable.Range(0, NumCases).Select(n => new object[] { n }).GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

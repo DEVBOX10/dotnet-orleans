@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
@@ -105,6 +106,13 @@ namespace Orleans.Runtime
                     var systemWideFilter = this.filters[stage];
                     stage++;
                     await systemWideFilter.Invoke(this);
+
+                    // If Response is null some filter did not continue the call chain
+                    if (this.Response is null)
+                    {
+                        ThrowBrokenCallFilterChain(systemWideFilter.GetType().Name);
+                    }
+
                     return;
                 }
 
@@ -116,6 +124,12 @@ namespace Orleans.Runtime
                     if (this.Grain is IIncomingGrainCallFilter grainClassLevelFilter)
                     {
                         await grainClassLevelFilter.Invoke(this);
+
+                        // If Response is null some filter did not continue the call chain
+                        if (this.Response is null)
+                        {
+                            ThrowBrokenCallFilterChain(this.Grain.GetType().Name);
+                        }
                         return;
                     }
                 }
@@ -152,7 +166,13 @@ namespace Orleans.Runtime
                 $"{nameof(GrainMethodInvoker)}.{nameof(Invoke)}() received an invalid call.");
         }
 
-        private InterfaceToImplementationMappingCache.Entry GetMethodEntry()
+        private static void ThrowBrokenCallFilterChain(string filterName)
+        {
+            throw new InvalidOperationException($"{nameof(GrainMethodInvoker)}.{nameof(Invoke)}() invoked a broken filter: {filterName}.");
+        }
+
+
+        private (MethodInfo ImplementationMethod, MethodInfo InterfaceMethod) GetMethodEntry()
         {
             var interfaceType = this.request.InterfaceType;
             var implementationType = this.request.GetTarget<object>().GetType();
@@ -163,17 +183,20 @@ namespace Orleans.Runtime
                 interfaceType);
 
             // Get the method info for the method being invoked.
-            if (!implementationMap.TryGetValue(request.Method, out var method))
+            if (request.Method.IsConstructedGenericMethod)
             {
-                return default;
+                if (implementationMap.TryGetValue(request.Method.GetGenericMethodDefinition(), out var entry))
+                {
+                    return entry.GetConstructedGenericMethod(request.Method);
+                }
+            }
+            else if (implementationMap.TryGetValue(request.Method, out var entry))
+            {
+                return (entry.ImplementationMethod, entry.InterfaceMethod);
             }
 
-            if (method.InterfaceMethod is null)
-            {
-                return default;
-            }
-
-            return method;
+            Debug.Assert(false, "Method entry not found");
+            return default;
         }
     }
 }

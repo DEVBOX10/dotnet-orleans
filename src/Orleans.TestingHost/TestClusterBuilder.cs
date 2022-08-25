@@ -77,7 +77,7 @@ namespace Orleans.TestingHost
                 _createSiloAsync = value;
 
                 // The custom builder does not have access to the in-memory transport.
-                Options.UseInMemoryTransport = false;
+                Options.ConnectionTransport = ConnectionTransportType.TcpSocket;
             }
         }
         
@@ -169,7 +169,7 @@ namespace Orleans.TestingHost
         public static string CreateClusterId()
         {
             string prefix = "testcluster-";
-            int randomSuffix = ThreadSafeRandom.Next(1000);
+            int randomSuffix = Random.Shared.Next(1000);
             DateTime now = DateTime.UtcNow;
             string DateTimeFormat = @"yyyy-MM-dd\tHH-mm-ss";
             return $"{prefix}{now.ToString(DateTimeFormat, CultureInfo.InvariantCulture)}-{randomSuffix}";

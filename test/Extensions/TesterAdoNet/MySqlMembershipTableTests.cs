@@ -16,12 +16,14 @@ namespace UnitTests.MembershipTests
     /// <summary>
     /// Tests for operation of Orleans Membership Table using MySQL
     /// </summary>
-    [TestCategory("Membership"), TestCategory("MySql")]
+    [TestCategory("Membership"), TestCategory("MySql"), TestCategory("Functional")]
     public class MySqlMembershipTableTests : MembershipTableTestsBase
     {
         public MySqlMembershipTableTests(ConnectionStringFixture fixture, TestEnvironmentFixture environment) : base(fixture, environment, CreateFilters())
         {
         }
+
+        protected override string GetAdoInvariant() => AdoNetInvariants.InvariantNameMySql;
 
         private static LoggerFilterOptions CreateFilters()
         {
@@ -37,7 +39,7 @@ namespace UnitTests.MembershipTests
                 Invariant = GetAdoInvariant(),
                 ConnectionString = this.connectionString,
             };
-            return new AdoNetClusteringTable(this.GrainReferenceConverter, this.clusterOptions, Options.Create(options), loggerFactory.CreateLogger<AdoNetClusteringTable>());
+            return new AdoNetClusteringTable(this.Services, this.clusterOptions, Options.Create(options), loggerFactory.CreateLogger<AdoNetClusteringTable>());
         }
 
         protected override IGatewayListProvider CreateGatewayListProvider(ILogger logger)
@@ -47,12 +49,7 @@ namespace UnitTests.MembershipTests
                 ConnectionString = this.connectionString,
                 Invariant = GetAdoInvariant()
             };
-            return new AdoNetGatewayListProvider(loggerFactory.CreateLogger<AdoNetGatewayListProvider>(), this.GrainReferenceConverter, Options.Create(options), this.gatewayOptions, this.clusterOptions);
-        }
-
-        protected override string GetAdoInvariant()
-        {
-            return AdoNetInvariants.InvariantNameMySql;
+            return new AdoNetGatewayListProvider(loggerFactory.CreateLogger<AdoNetGatewayListProvider>(), this.Services, Options.Create(options), this.gatewayOptions, this.clusterOptions);
         }
 
         protected override async Task<string> GetConnectionString()
@@ -112,6 +109,12 @@ namespace UnitTests.MembershipTests
         public async Task MembershipTable_MySql_UpdateIAmAlive()
         {
             await MembershipTable_UpdateIAmAlive();
+        }
+
+        [SkippableFact]
+        public async Task MembershipTable_MySql_CleanupDefunctSiloEntries()
+        {
+            await MembershipTable_CleanupDefunctSiloEntries();
         }
     }
 }

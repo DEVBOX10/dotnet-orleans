@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Configuration;
 using AWSUtils.Tests.StorageTests;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Orleans;
 using Orleans.Runtime;
@@ -18,7 +19,7 @@ namespace AWSUtils.Tests.Streaming
     {
         private const string SQSStreamProviderName = "SQSProvider";
         private const string StreamNamespace = "SQSSubscriptionMultiplicityTestsNamespace";
-        private string StreamConnectionString = AWSTestConstants.DefaultSQSConnectionString;
+        private string StreamConnectionString = AWSTestConstants.SqsConnectionString;
         private SubscriptionMultiplicityTestRunner runner;
 
         protected override void ConfigureTestCluster(TestClusterBuilder builder)
@@ -38,10 +39,10 @@ namespace AWSUtils.Tests.Streaming
             {
                 hostBuilder
                     .AddMemoryGrainStorage("PubSubStore")
-                    .AddSqsStreams(SQSStreamProviderName, options =>
+                    .AddSqsStreams(SQSStreamProviderName, (Action<Orleans.Configuration.SqsOptions>)(options =>
                     {
-                        options.ConnectionString = AWSTestConstants.DefaultSQSConnectionString;
-                    });
+                        options.ConnectionString = AWSTestConstants.SqsConnectionString;
+                    }));
             }
         }
 
@@ -50,10 +51,10 @@ namespace AWSUtils.Tests.Streaming
             public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
             {
                 clientBuilder
-                    .AddSqsStreams(SQSStreamProviderName, options =>
+                    .AddSqsStreams(SQSStreamProviderName, (Action<Orleans.Configuration.SqsOptions>)(options =>
                     {
-                        options.ConnectionString = AWSTestConstants.DefaultSQSConnectionString;
-                    });
+                        options.ConnectionString = AWSTestConstants.SqsConnectionString;
+                    }));
             }
         }
 
@@ -76,56 +77,56 @@ namespace AWSUtils.Tests.Streaming
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSMultipleParallelSubscriptionTest()
         {
-            logger.Info("************************ SQSMultipleParallelSubscriptionTest *********************************");
+            logger.LogInformation("************************ SQSMultipleParallelSubscriptionTest *********************************");
             await runner.MultipleParallelSubscriptionTest(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSMultipleLinearSubscriptionTest()
         {
-            logger.Info("************************ SQSMultipleLinearSubscriptionTest *********************************");
+            logger.LogInformation("************************ SQSMultipleLinearSubscriptionTest *********************************");
             await runner.MultipleLinearSubscriptionTest(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSMultipleSubscriptionTest_AddRemove()
         {
-            logger.Info("************************ SQSMultipleSubscriptionTest_AddRemove *********************************");
+            logger.LogInformation("************************ SQSMultipleSubscriptionTest_AddRemove *********************************");
             await runner.MultipleSubscriptionTest_AddRemove(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSResubscriptionTest()
         {
-            logger.Info("************************ SQSResubscriptionTest *********************************");
+            logger.LogInformation("************************ SQSResubscriptionTest *********************************");
             await runner.ResubscriptionTest(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSResubscriptionAfterDeactivationTest()
         {
-            logger.Info("************************ ResubscriptionAfterDeactivationTest *********************************");
+            logger.LogInformation("************************ ResubscriptionAfterDeactivationTest *********************************");
             await runner.ResubscriptionAfterDeactivationTest(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSActiveSubscriptionTest()
         {
-            logger.Info("************************ SQSActiveSubscriptionTest *********************************");
+            logger.LogInformation("************************ SQSActiveSubscriptionTest *********************************");
             await runner.ActiveSubscriptionTest(Guid.NewGuid(), StreamNamespace);
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSTwoIntermitentStreamTest()
         {
-            logger.Info("************************ SQSTwoIntermitentStreamTest *********************************");
+            logger.LogInformation("************************ SQSTwoIntermitentStreamTest *********************************");
             await runner.TwoIntermitentStreamTest(Guid.NewGuid());
         }
 
         [SkippableFact, TestCategory("AWS")]
         public async Task SQSSubscribeFromClientTest()
         {
-            logger.Info("************************ SQSSubscribeFromClientTest *********************************");
+            logger.LogInformation("************************ SQSSubscribeFromClientTest *********************************");
             await runner.SubscribeFromClientTest(Guid.NewGuid(), StreamNamespace);
         }
     }

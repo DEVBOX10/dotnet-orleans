@@ -52,12 +52,11 @@ namespace Orleans.Serialization
         /// </summary>
         /// <typeparam name="T">The expected type of <paramref name="value"/>.</typeparam>
         /// <param name="value">The value to serialize.</param>
-        /// <param name="sizeHint">The estimated upper bound for the length of the serialized data.</param>
         /// <returns>A byte array containing the serialized value.</returns>
-        public byte[] SerializeToArray<T>(T value, int sizeHint = 0)
+        public byte[] SerializeToArray<T>(T value)
         {
             using var session = _sessionPool.GetSession();
-            var writer = Writer.Create(new PooledArrayBufferWriter(sizeHint), session);
+            var writer = Writer.CreatePooled(session);
             try
             {
                 var codec = _codecProvider.GetCodec<T>();
@@ -547,12 +546,11 @@ namespace Orleans.Serialization
         /// Serializes the provided <paramref name="value"/> into a new array.
         /// </summary>
         /// <param name="value">The value to serialize.</param>
-        /// <param name="sizeHint">The estimated upper bound for the length of the serialized data.</param>
         /// <returns>A byte array containing the serialized value.</returns>
-        public byte[] SerializeToArray(T value, int sizeHint = 0)
+        public byte[] SerializeToArray(T value)
         {
             using var session = _sessionPool.GetSession();
-            var writer = Writer.Create(new PooledArrayBufferWriter(sizeHint), session);
+            var writer = Writer.CreatePooled(session);
             try
             {
                 _codec.WriteField(ref writer, 0, typeof(T), value);
@@ -864,7 +862,6 @@ namespace Orleans.Serialization
     {
         private readonly IValueSerializer<T> _codec;
         private readonly SerializerSessionPool _sessionPool;
-        private readonly Type _expectedType;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ValueSerializer{T}"/> class.
@@ -874,7 +871,6 @@ namespace Orleans.Serialization
         public ValueSerializer(IValueSerializerProvider codecProvider, SerializerSessionPool sessionPool)
         {
             _sessionPool = sessionPool;
-            _expectedType = typeof(T);
             _codec = OrleansGeneratedCodeHelper.UnwrapService(null, codecProvider.GetValueSerializer<T>());
         }
 
@@ -886,7 +882,6 @@ namespace Orleans.Serialization
         /// <param name="destination">The destination where serialized data will be written.</param>
         public void Serialize<TBufferWriter>(ref T value, ref Writer<TBufferWriter> destination) where TBufferWriter : IBufferWriter<byte>
         {
-            destination.WriteStartObject(0, _expectedType, _expectedType);
             _codec.Serialize(ref destination, ref value);
             destination.WriteEndObject();
             destination.Commit();
@@ -903,6 +898,7 @@ namespace Orleans.Serialization
             using var session = _sessionPool.GetSession();
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
 
             // Do not dispose, since the buffer writer is not owned by the method.
@@ -919,6 +915,7 @@ namespace Orleans.Serialization
         {
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
 
             // Do not dispose, since the buffer writer is not owned by the method.
@@ -928,15 +925,15 @@ namespace Orleans.Serialization
         /// Serializes the provided <paramref name="value"/> into a new array.
         /// </summary>
         /// <param name="value">The value to serialize.</param>
-        /// <param name="sizeHint">The estimated upper bound for the length of the serialized data.</param>
         /// <returns>A byte array containing the serialized value.</returns>
-        public byte[] SerializeToArray(ref T value, int sizeHint = 0)
+        public byte[] SerializeToArray(ref T value)
         {
             using var session = _sessionPool.GetSession();
-            var writer = Writer.Create(new PooledArrayBufferWriter(sizeHint), session);
+            var writer = Writer.CreatePooled(session);
             try
             {
                 _codec.Serialize(ref writer, ref value);
+                writer.WriteEndObject();
                 writer.Commit();
                 return writer.Output.ToArray();
             }
@@ -969,6 +966,7 @@ namespace Orleans.Serialization
             using var session = _sessionPool.GetSession();
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             destination = destination.Slice(0, writer.Position);
         }
@@ -984,6 +982,7 @@ namespace Orleans.Serialization
         {
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             destination = destination.Slice(0, writer.Position);
         }
@@ -999,6 +998,7 @@ namespace Orleans.Serialization
             using var session = _sessionPool.GetSession();
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             destination = destination.Slice(0, writer.Position);
         }
@@ -1014,6 +1014,7 @@ namespace Orleans.Serialization
         {
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             destination = destination.Slice(0, writer.Position);
         }
@@ -1029,6 +1030,7 @@ namespace Orleans.Serialization
             using var session = _sessionPool.GetSession();
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             return writer.Position;
         }
@@ -1044,6 +1046,7 @@ namespace Orleans.Serialization
         {
             var writer = Writer.Create(destination, session);
             _codec.Serialize(ref writer, ref value);
+            writer.WriteEndObject();
             writer.Commit();
             return writer.Position;
         }
@@ -1063,6 +1066,7 @@ namespace Orleans.Serialization
                 using var session = _sessionPool.GetSession();
                 var writer = Writer.Create(buffer, session);
                 _codec.Serialize(ref writer, ref value);
+                writer.WriteEndObject();
                 writer.Commit();
             }
             else
@@ -1072,6 +1076,7 @@ namespace Orleans.Serialization
                 try
                 {
                     _codec.Serialize(ref writer, ref value);
+                    writer.WriteEndObject();
                     writer.Commit();
                 }
                 finally
@@ -1096,6 +1101,7 @@ namespace Orleans.Serialization
                 var buffer = new MemoryStreamBufferWriter(memoryStream);
                 var writer = Writer.Create(buffer, session);
                 _codec.Serialize(ref writer, ref value);
+                writer.WriteEndObject();
                 writer.Commit();
             }
             else
@@ -1104,6 +1110,7 @@ namespace Orleans.Serialization
                 try
                 {
                     _codec.Serialize(ref writer, ref value);
+                    writer.WriteEndObject();
                     writer.Commit();
                 }
                 finally
@@ -1122,8 +1129,6 @@ namespace Orleans.Serialization
         /// <returns>The deserialized value.</returns>
         public void Deserialize<TInput>(ref Reader<TInput> source, ref T result)
         {
-            Field ignored = default;
-            source.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref source, ref result);
         }
 
@@ -1137,8 +1142,6 @@ namespace Orleans.Serialization
         {
             using var session = _sessionPool.GetSession();
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1152,8 +1155,6 @@ namespace Orleans.Serialization
         public void Deserialize(Stream source, ref T result, SerializerSession session)
         {
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1167,8 +1168,6 @@ namespace Orleans.Serialization
         {
             using var session = _sessionPool.GetSession();
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1182,8 +1181,6 @@ namespace Orleans.Serialization
         public void Deserialize(ReadOnlySequence<byte> source, ref T result, SerializerSession session)
         {
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1206,8 +1203,6 @@ namespace Orleans.Serialization
         {
             using var session = _sessionPool.GetSession();
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1221,8 +1216,6 @@ namespace Orleans.Serialization
         public void Deserialize(ReadOnlySpan<byte> source, ref T result, SerializerSession session)
         {
             var reader = Reader.Create(source, session);
-            Field ignored = default;
-            reader.ReadFieldHeader(ref ignored);
             _codec.Deserialize(ref reader, ref result);
         }
 
@@ -1735,7 +1728,7 @@ namespace Orleans.Serialization
         public T Copy<T>(T value)
         {
             using var context = _contextPool.GetContext();
-            return context.Copy(value);
+            return context.DeepCopy(value);
         }
     }
 

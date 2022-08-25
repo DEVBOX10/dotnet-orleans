@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Tester.AzureUtils
 {
-    [TestCategory("Azure"), TestCategory("Storage")]
+    [TestCategory("AzureStorage"), TestCategory("Storage")]
     public class AzureTableDataManagerTests : AzureStorageBasicTests
     {
         private string PartitionKey;
@@ -40,7 +40,7 @@ namespace Tester.AzureUtils
                 await manager.CreateTableEntryAsync(data2);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.Conflict, exc.Status);  // "Creating an already existing entry."
                 HttpStatusCode httpStatusCode;
@@ -71,13 +71,14 @@ namespace Tester.AzureUtils
         [SkippableFact, TestCategory("Functional")]
         public async Task AzureTableDataManager_UpdateTableEntryAsync()
         {
+            StorageEmulatorUtilities.EnsureEmulatorIsNotUsed();
             var data = GenerateNewData();
             try
             {
                 await manager.UpdateTableEntryAsync(data, AzureTableUtils.ANY_ETAG);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.NotFound, exc.Status);  // "Update before insert."
                 HttpStatusCode httpStatusCode;
@@ -108,7 +109,7 @@ namespace Tester.AzureUtils
                 string eTag3 = await manager.UpdateTableEntryAsync(data3.Clone(), eTag1);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.PreconditionFailed, exc.Status);  // "Wrong eTag"
                 HttpStatusCode httpStatusCode;
@@ -128,7 +129,7 @@ namespace Tester.AzureUtils
                 await manager.DeleteTableEntryAsync(data, AzureTableUtils.ANY_ETAG);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.NotFound, exc.Status);  // "Delete before create."
                 HttpStatusCode httpStatusCode;
@@ -144,7 +145,7 @@ namespace Tester.AzureUtils
                 await manager.DeleteTableEntryAsync(data, eTag1);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.NotFound, exc.Status);  // "Deleting an already deleted item."
                 HttpStatusCode httpStatusCode;
@@ -159,13 +160,14 @@ namespace Tester.AzureUtils
         [SkippableFact, TestCategory("Functional")]
         public async Task AzureTableDataManager_MergeTableAsync()
         {
+            StorageEmulatorUtilities.EnsureEmulatorIsNotUsed();
             var data = GenerateNewData();
             try
             {
                 await manager.MergeTableEntryAsync(data, AzureTableUtils.ANY_ETAG);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.NotFound, exc.Status);  // "Merge before create."
                 HttpStatusCode httpStatusCode;
@@ -185,7 +187,7 @@ namespace Tester.AzureUtils
                 await manager.MergeTableEntryAsync(data, eTag1);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.PreconditionFailed, exc.Status);  // "Wrong eTag."
                 HttpStatusCode httpStatusCode;
@@ -218,7 +220,7 @@ namespace Tester.AzureUtils
             {
                 await manager.InsertTwoTableEntriesConditionallyAsync(data1, data2, AzureTableUtils.ANY_ETAG);
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.NotFound, exc.Status);  // "Upadte item 2 before created it."
                 HttpStatusCode httpStatusCode;
@@ -235,7 +237,7 @@ namespace Tester.AzureUtils
                 await manager.InsertTwoTableEntriesConditionallyAsync(data1.Clone(), data2.Clone(), tuple.Item2);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.Conflict, exc.Status);  // "Inserting an already existing item 1."
                 HttpStatusCode httpStatusCode;
@@ -250,7 +252,7 @@ namespace Tester.AzureUtils
                 await manager.InsertTwoTableEntriesConditionallyAsync(data1.Clone(), data2.Clone(), AzureTableUtils.ANY_ETAG);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.Conflict, exc.Status);  // "Inserting an already existing item 1 AND wring eTag"
                 HttpStatusCode httpStatusCode;
@@ -292,7 +294,7 @@ namespace Tester.AzureUtils
                 await manager.UpdateTwoTableEntriesConditionallyAsync(data1, tuple1.Item1, data2, tuple1.Item2);
                 Assert.True(false, "Should have thrown RequestFailedException.");
             }
-            catch(RequestFailedException exc)
+            catch (RequestFailedException exc)
             {
                 Assert.Equal((int)HttpStatusCode.PreconditionFailed, exc.Status);  // "Wrong eTag"
                 HttpStatusCode httpStatusCode;

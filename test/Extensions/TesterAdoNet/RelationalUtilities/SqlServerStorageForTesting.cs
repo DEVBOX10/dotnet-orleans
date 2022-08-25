@@ -2,35 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Orleans.Tests.SqlUtils;
+using TestExtensions;
 
 namespace UnitTests.General
 {
     public class SqlServerStorageForTesting : RelationalStorageForTesting
     {
+        protected override string ProviderMoniker => "SQLServer";
+
         public SqlServerStorageForTesting(string connectionString)
             : base(AdoNetInvariants.InvariantNameSqlServer, connectionString)
         {
         }
 
-        public override string DefaultConnectionString
-        {
-            get { return @"Data Source = (localdb)\MSSQLLocalDB; Database = Master; Integrated Security = True; Max Pool Size = 200; MultipleActiveResultSets = True"; }
-        }
+        public override string DefaultConnectionString => TestDefaultConfiguration.MsSqlConnectionString;
 
         public override string CancellationTestQuery { get { return "WAITFOR DELAY '00:00:010'; SELECT 1; "; } }
 
         public override string CreateStreamTestTable { get { return "CREATE TABLE StreamingTest(Id INT NOT NULL, StreamData VARBINARY(MAX) NOT NULL);"; } }
-
-        protected override string[] SetupSqlScriptFileNames
-        {
-            get { return new[] {
-                    "SQLServer-Main.sql",
-                    "SQLServer-Clustering.sql",
-                    "SQLServer-Persistence.sql",
-                    "SQLServer-Reminders.sql"
-                };
-            }
-        }
 
         protected override string CreateDatabaseTemplate
         {

@@ -23,30 +23,33 @@ namespace Orleans.Runtime.ConsistentRing
         private readonly int numBucketsPerSilo;
         private bool running;
         private IRingRange myRange;
+        private (IRingRange OldRange, IRingRange NewRange, bool Increased) lastNotification;
 
         internal VirtualBucketsRingProvider(SiloAddress siloAddress, ILoggerFactory loggerFactory, int numVirtualBuckets)
         {
             numBucketsPerSilo = numVirtualBuckets;
 
             if (numBucketsPerSilo <= 0)
-                throw new IndexOutOfRangeException("numBucketsPerSilo is out of the range. numBucketsPerSilo = " + numBucketsPerSilo);
+                throw new IndexOutOfRangeException($"numBucketsPerSilo is out of the range. numBucketsPerSilo = {numBucketsPerSilo}");
 
             logger = loggerFactory.CreateLogger<VirtualBucketsRingProvider>();
 
             myAddress = siloAddress;
             running = true;
             myRange = RangeFactory.CreateFullRange();
+            lastNotification = (myRange, myRange, true);
 
-            logger.Info("Starting {0} on silo {1}.", nameof(VirtualBucketsRingProvider), siloAddress.ToStringWithHashCode());
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("Starting {Name} on silo {SiloAddress}.", nameof(VirtualBucketsRingProvider), siloAddress.ToStringWithHashCode());
+            }
 
-            StringValueStatistic.FindOrCreate(StatisticNames.CONSISTENTRING_RING, ToString);
-            IntValueStatistic.FindOrCreate(StatisticNames.CONSISTENTRING_RINGSIZE, () => GetRingSize());
-            StringValueStatistic.FindOrCreate(StatisticNames.CONSISTENTRING_MYRANGE_RINGDISTANCE, () => String.Format("x{0,8:X8}", ((IRingRangeInternal)myRange).RangeSize()));
-            FloatValueStatistic.FindOrCreate(StatisticNames.CONSISTENTRING_MYRANGE_RINGPERCENTAGE, () => (float)((IRingRangeInternal)myRange).RangePercentage());
-            FloatValueStatistic.FindOrCreate(StatisticNames.CONSISTENTRING_AVERAGERINGPERCENTAGE, () =>
+            ConsistentRingInstruments.RegisterRingSizeObserve(() => GetRingSize());
+            ConsistentRingInstruments.RegisterMyRangeRingPercentageObserve(() => (float)((IRingRangeInternal)myRange).RangePercentage());
+            ConsistentRingInstruments.RegisterAverageRingPercentageObserve(() =>
             {
                 int size = GetRingSize();
-                return size == 0 ? 0 : ((float)100.0 / (float)size);
+                return size == 0 ? 0 : ((float)100.0 / size);
             });
 
             // add myself to the list of members
@@ -73,13 +76,17 @@ namespace Orleans.Runtime.ConsistentRing
 
         public bool SubscribeToRangeChangeEvents(IRingRangeListener observer)
         {
+            (IRingRange OldRange, IRingRange NewRange, bool Increased) notification;
             lock (statusListeners)
             {
                 if (statusListeners.Contains(observer)) return false;
 
+                notification = lastNotification;
                 statusListeners.Add(observer);
-                return true;
             }
+
+            observer.RangeChangeNotification(notification.OldRange, notification.NewRange, notification.Increased);
+            return true;
         }
 
         public bool UnSubscribeFromRangeChangeEvents(IRingRangeListener observer)
@@ -92,10 +99,15 @@ namespace Orleans.Runtime.ConsistentRing
 
         private void NotifyLocalRangeSubscribers(IRingRange old, IRingRange now, bool increased)
         {
-            logger.Info(ErrorCode.CRP_Notify, "-NotifyLocalRangeSubscribers about old {0} new {1} increased? {2}", old.ToString(), now.ToString(), increased);
+            if (logger.IsEnabled(LogLevel.Trace))
+            {
+                logger.LogTrace((int)ErrorCode.CRP_Notify, "NotifyLocalRangeSubscribers about old {Old} new {New} increased? {IsIncrease}", old.ToString(), now.ToString(), increased);
+            }
+
             IRingRangeListener[] copy;
             lock (statusListeners)
             {
+                lastNotification = (old, now, increased);
                 copy = statusListeners.ToArray();
             }
             foreach (IRingRangeListener listener in copy)
@@ -106,9 +118,14 @@ namespace Orleans.Runtime.ConsistentRing
                 }
                 catch (Exception exc)
                 {
-                    logger.Error(ErrorCode.CRP_Local_Subscriber_Exception,
-                        String.Format("Local IRangeChangeListener {0} has thrown an exception when was notified about RangeChangeNotification about old {1} new {2} increased? {3}",
-                        listener.GetType().FullName, old, now, increased), exc);
+                    logger.LogError(
+                        (int)ErrorCode.CRP_Local_Subscriber_Exception,
+                        exc,
+                        "Local IRangeChangeListener {Name} has thrown an exception when was notified about RangeChangeNotification about old {OldRange} new {NewRange} increased? {IsIncrease}",
+                        listener.GetType().FullName,
+                        old,
+                        now,
+                        increased);
                 }
             }
         }
@@ -130,7 +147,10 @@ namespace Orleans.Runtime.ConsistentRing
 
                 var myOldRange = myRange;
                 var myNewRange = UpdateRange();
-                logger.Info(ErrorCode.CRP_Added_Silo, "Added Server {0}. Current view: {1}", silo.ToStringWithHashCode(), this.ToString());
+                if (logger.IsEnabled(LogLevel.Trace))
+                {
+                    logger.LogTrace((int)ErrorCode.CRP_Added_Silo, "Added Server {SiloAddress}. Current view: {CurrentView}", silo.ToStringWithHashCode(), this.ToString());
+                }
 
                 NotifyLocalRangeSubscribers(myOldRange, myNewRange, true);
             }
@@ -142,7 +162,7 @@ namespace Orleans.Runtime.ConsistentRing
             {
                 if (!bucketsMap.ContainsValue(silo)) return; // we have already removed this silo
 
-                List<uint> hashes = silo.GetUniformHashCodes(numBucketsPerSilo);
+                var hashes = silo.GetUniformHashCodes(numBucketsPerSilo);
                 foreach (var hash in hashes)
                 {
                     if (bucketsMap.Remove(hash, out var removedSilo) && !removedSilo.Equals(silo))
@@ -156,7 +176,11 @@ namespace Orleans.Runtime.ConsistentRing
 
                 var myOldRange = this.myRange;
                 var myNewRange = UpdateRange();
-                logger.Info(ErrorCode.CRP_Removed_Silo, "Removed Server {0}. Current view: {1}", silo.ToStringWithHashCode(), this.ToString());
+
+                if (logger.IsEnabled(LogLevel.Trace))
+                {
+                    logger.LogTrace((int)ErrorCode.CRP_Removed_Silo, "Removed Server {SiloAddress}. Current view: {CurrentView}", silo.ToStringWithHashCode(), this.ToString());
+                }
 
                 NotifyLocalRangeSubscribers(myOldRange, myNewRange, true);
             }
@@ -197,7 +221,7 @@ namespace Orleans.Runtime.ConsistentRing
         {
             var sortedList = GetRanges();
             sortedList.Sort((t1, t2) => t1.Value.RangePercentage().CompareTo(t2.Value.RangePercentage()));
-            return Utils.EnumerableToString(sortedList, kv => String.Format("{0} -> {1}", kv.Key, kv.Value.ToString()));
+            return Utils.EnumerableToString(sortedList, kv => $"{kv.Key} -> {kv.Value}");
         }
 
         // Internal: for testing/logging only!
@@ -298,10 +322,12 @@ namespace Orleans.Runtime.ConsistentRing
                     s = snapshotBucketsList.Length > 1 ? snapshotBucketsList[1] : default;
                 }
             }
-            if (logger.IsEnabled(LogLevel.Trace)) logger.Trace("Calculated ring partition owner silo {0} for key {1}: {2} --> {3}", s.SiloAddress, hash, hash, s.Hash);
+            if (logger.IsEnabled(LogLevel.Trace))
+            {
+                logger.LogTrace("Calculated ring partition owner silo {Owner} for key {Key}: {Key} --> {OwnerHash}", s.SiloAddress, hash, hash, s.Hash);
+            }
             return s.SiloAddress;
         }
     }
 }
-
 

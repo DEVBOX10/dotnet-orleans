@@ -25,7 +25,7 @@ namespace UnitTests.Grains
 
         public override Task OnActivateAsync(CancellationToken cancellationToken)
         {
-            logger.Info("OnActivateAsync");
+            logger.LogInformation("OnActivateAsync");
             ConsumerHandle = null;
             return Task.CompletedTask;
         }
@@ -37,7 +37,7 @@ namespace UnitTests.Grains
 
         public async Task BecomeConsumer(Guid streamId, string streamNamespace, string providerToUse)
         {
-            logger.Info("BecomeConsumer");
+            logger.LogInformation("BecomeConsumer");
             ConsumerObserver = new SlowObserver<int>(this, logger);
             IStreamProvider streamProvider = this.GetStreamProvider(providerToUse);
             var consumer = streamProvider.GetStream<int>(streamId, streamNamespace);
@@ -46,7 +46,7 @@ namespace UnitTests.Grains
 
         public async Task StopConsuming()
         {
-            logger.Info("StopConsuming");
+            logger.LogInformation("StopConsuming");
             if (ConsumerHandle != null)
             {
                 await ConsumerHandle.UnsubscribeAsync();
@@ -64,6 +64,8 @@ namespace UnitTests.Grains
         public int NumConsumed { get; private set; }
         private ILogger logger;
         private SlowConsumingGrain slowConsumingGrain;
+        private StreamSequenceToken firstToken;
+
         internal SlowObserver(SlowConsumingGrain grain, ILogger logger)
         {
             NumConsumed = 0;
@@ -74,20 +76,29 @@ namespace UnitTests.Grains
         public async Task OnNextAsync(T item, StreamSequenceToken token = null)
         {
             NumConsumed++;
-            // slow consumer keep asking for the first item it received to mimic slow consuming behavior
-            this.slowConsumingGrain.ConsumerHandle = await this.slowConsumingGrain.ConsumerHandle.ResumeAsync(this.slowConsumingGrain.ConsumerObserver, token);
-            this.logger.Info($"Consumer {this.GetHashCode()} OnNextAsync() received item {item.ToString()}, with NumConsumed {NumConsumed}");
+
+            if (firstToken == null)
+            {
+                firstToken = token;
+            }
+            else
+            {
+                // slow consumer keep asking for the first item it received to mimic slow consuming behavior
+                this.slowConsumingGrain.ConsumerHandle = await this.slowConsumingGrain.ConsumerHandle.ResumeAsync(this.slowConsumingGrain.ConsumerObserver, firstToken);
+            }
+
+            this.logger.LogInformation("Consumer {HashCode} OnNextAsync() received item {Item}, with NumConsumed {NumConsumed}", this.GetHashCode(), item, NumConsumed);
         }
 
         public Task OnCompletedAsync()
         {
-            this.logger.Info($"Consumer {this.GetHashCode()} OnCompletedAsync()");
+            this.logger.LogInformation("Consumer {HashCode} OnCompletedAsync()", this.GetHashCode());
             return Task.CompletedTask;
         }
 
         public Task OnErrorAsync(Exception ex)
         {
-            this.logger.Info($"Consumer {this.GetHashCode()} OnErrorAsync({ex})");
+            this.logger.LogInformation(ex, "Consumer {HashCode} OnErrorAsync()", this.GetHashCode());
             return Task.CompletedTask;
         }
     }

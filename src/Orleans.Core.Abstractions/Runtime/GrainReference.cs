@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Orleans.CodeGeneration;
 using System.Text;
 using System.Diagnostics;
+using Orleans.Serialization;
 
 namespace Orleans.Runtime
 {
@@ -24,12 +25,16 @@ namespace Orleans.Runtime
             ushort interfaceVersion,
             IGrainReferenceRuntime runtime,
             InvokeMethodOptions invokeMethodOptions,
+            CodecProvider codecProvider,
+            CopyContextPool copyContextPool,
             IServiceProvider serviceProvider)
         {
             this.GrainType = grainType;
             this.InterfaceType = grainInterfaceType;
             this.Runtime = runtime;
             this.InvokeMethodOptions = invokeMethodOptions;
+            this.CodecProvider = codecProvider;
+            this.CopyContextPool = copyContextPool;
             this.ServiceProvider = serviceProvider;
             this.InterfaceVersion = interfaceVersion;
         }
@@ -53,6 +58,16 @@ namespace Orleans.Runtime
         /// Gets the common invocation options.
         /// </summary>
         public InvokeMethodOptions InvokeMethodOptions { get; }
+
+        /// <summary>
+        /// Gets the serialization codec provider.
+        /// </summary>
+        public CodecProvider CodecProvider { get; }
+
+        /// <summary>
+        /// Gets the serialization copy context pool.
+        /// </summary>
+        public CopyContextPool CopyContextPool { get; }
 
         /// <summary>
         /// Gets the service provider.
@@ -169,7 +184,6 @@ namespace Orleans.Runtime
         /// Throws an exception indicating that a parameter type is not supported.
         /// </summary>
         /// <param name="observer">The observer.</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
         internal static void ThrowGrainObserverInvalidException(IGrainObserver observer)
             => throw new NotSupportedException($"IGrainObserver parameters must be GrainReference or Grain and cannot be type {observer.GetType()}. Did you forget to CreateObjectReference?");
     }
@@ -248,7 +262,7 @@ namespace Orleans.Runtime
     [DefaultInvokableBaseType(typeof(Task<>), typeof(TaskRequest<>))]
     [DefaultInvokableBaseType(typeof(Task), typeof(TaskRequest))]
     [DefaultInvokableBaseType(typeof(void), typeof(VoidRequest))]
-    public class GrainReference : IAddressable, IEquatable<GrainReference>
+    public class GrainReference : IAddressable, IEquatable<GrainReference>, ISpanFormattable
     {
         /// <summary>
         /// The grain reference functionality which is shared by all grain references of a given type.
@@ -282,6 +296,16 @@ namespace Orleans.Runtime
         /// </summary>
         public GrainInterfaceType InterfaceType => _shared.InterfaceType;
 
+        /// <summary>
+        /// Gets the serialization copy context pool.
+        /// </summary>
+        protected CopyContextPool CopyContextPool => _shared.CopyContextPool;
+
+        /// <summary>
+        /// Gets the serialization codec provider.
+        /// </summary>
+        protected CodecProvider CodecProvider => _shared.CodecProvider;
+
         /// <summary>Initializes a new instance of the <see cref="GrainReference"/> class.</summary>
         /// <param name="shared">
         /// The grain reference functionality which is shared by all grain references of a given type.
@@ -295,20 +319,10 @@ namespace Orleans.Runtime
             _key = key;
         }
 
-        /// <summary>Initializes a new instance of the <see cref="GrainReference"/> class.</summary>
-        /// <param name="shared">
-        /// The grain reference functionality which is shared by all grain references of a given type.
-        /// </param>
-        /// <param name="grainId">
-        /// The grain id.
-        /// </param>
-        /// <returns>
-        /// A new <see cref="GrainReference"/> instance.
-        /// </returns>
-        internal static GrainReference FromGrainId(GrainReferenceShared shared, GrainId grainId)
-        {
-            return new GrainReference(shared, grainId.Key);
-        }
+        /// <summary>
+        /// Creates a new <see cref="GrainReference"/> instance for the specified <paramref name="grainId"/>.
+        /// </summary>
+        internal static GrainReference FromGrainId(GrainReferenceShared shared, GrainId grainId) => new(shared, grainId.Key);
 
         /// <summary>
         /// Creates a new grain reference which implements the specified grain interface.
@@ -333,7 +347,7 @@ namespace Orleans.Runtime
         }
 
         /// <inheritdoc />
-        public bool Equals(GrainReference other) => other is GrainReference && this.GrainId.Equals(other.GrainId);
+        public bool Equals(GrainReference other) => other is not null && this.GrainId.Equals(other.GrainId);
 
         /// <inheritdoc />
         public override int GetHashCode() => this.GrainId.GetHashCode();
@@ -387,10 +401,15 @@ namespace Orleans.Runtime
         /// <summary>
         /// Gets the interface name.
         /// </summary>
-        public virtual string InterfaceName => InterfaceType.ToStringUtf8();
+        public virtual string InterfaceName => InterfaceType.ToString();
 
         /// <inheritdoc/>
-        public override string ToString() => $"GrainReference:{GrainId}:{InterfaceType}";
+        public sealed override string ToString() => $"GrainReference:{GrainId}:{InterfaceType}";
+
+        string IFormattable.ToString(string format, IFormatProvider formatProvider) => ToString();
+
+        bool ISpanFormattable.TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider provider)
+            => destination.TryWrite($"GrainReference:{GrainId}:{InterfaceType}", out charsWritten);
 
         protected TInvokable GetInvokable<TInvokable>() => ActivatorUtilities.GetServiceOrCreateInstance<TInvokable>(Shared.ServiceProvider);
 
@@ -421,6 +440,7 @@ namespace Orleans.Runtime
     /// <summary>
     /// Base type used for method requests.
     /// </summary>
+    [SuppressReferenceTracking]
     [GenerateSerializer]
     public abstract class RequestBase : IInvokable
     {

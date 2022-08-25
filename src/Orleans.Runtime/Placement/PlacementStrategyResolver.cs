@@ -13,7 +13,7 @@ namespace Orleans.Runtime.Placement
     /// </summary>
     public sealed class PlacementStrategyResolver
     {
-        private readonly ConcurrentDictionary<GrainType, PlacementStrategy> _resolvedStrategies = new ConcurrentDictionary<GrainType, PlacementStrategy>(GrainType.Comparer.Instance);
+        private readonly ConcurrentDictionary<GrainType, PlacementStrategy> _resolvedStrategies = new();
         private readonly Func<GrainType, PlacementStrategy> _getStrategyInternal;
         private readonly IPlacementStrategyResolver[] _resolvers;
         private readonly IServiceProvider _services;
@@ -66,7 +66,7 @@ namespace Orleans.Runtime.Placement
                 }
             }
 
-            if (properties is object
+            if (properties is not null
                 && properties.Properties.TryGetValue(WellKnownGrainTypeProperties.PlacementStrategy, out var placementStrategyId)
                 && !string.IsNullOrWhiteSpace(placementStrategyId))
             {

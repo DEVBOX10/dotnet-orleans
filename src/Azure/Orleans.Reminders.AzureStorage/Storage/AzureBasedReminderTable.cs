@@ -10,9 +10,8 @@ using Orleans.Reminders.AzureStorage;
 
 namespace Orleans.Runtime.ReminderService
 {
-    public class AzureBasedReminderTable : IReminderTable
+    public sealed class AzureBasedReminderTable : IReminderTable
     {
-        private readonly GrainReferenceKeyStringConverter grainReferenceConverter;
         private readonly ILogger logger;
         private readonly ILoggerFactory loggerFactory;
         private readonly ClusterOptions clusterOptions;
@@ -20,12 +19,10 @@ namespace Orleans.Runtime.ReminderService
         private RemindersTableManager remTableManager;
 
         public AzureBasedReminderTable(
-            GrainReferenceKeyStringConverter grainReferenceConverter,
             ILoggerFactory loggerFactory,
             IOptions<ClusterOptions> clusterOptions,
             IOptions<AzureTableReminderStorageOptions> storageOptions)
         {
-            this.grainReferenceConverter = grainReferenceConverter;
             this.logger = loggerFactory.CreateLogger<AzureBasedReminderTable>();
             this.loggerFactory = loggerFactory;
             this.clusterOptions = clusterOptions.Value;
@@ -46,6 +43,7 @@ namespace Orleans.Runtime.ReminderService
             var remEntries = new List<ReminderEntry>();
             foreach (var entry in entries)
             {
+#pragma warning disable RCS1075 // Avoid empty catch clause that catches System.Exception.
                 try
                 {
                     ReminderEntry converted = ConvertFromTableEntry(entry.Entity, entry.ETag);
@@ -55,6 +53,7 @@ namespace Orleans.Runtime.ReminderService
                 {
                     // Ignoring...
                 }
+#pragma warning restore RCS1075 // Avoid empty catch clause that catches System.Exception.
             }
             return new ReminderTableData(remEntries);
         }
@@ -65,7 +64,7 @@ namespace Orleans.Runtime.ReminderService
             {
                 return new ReminderEntry
                 {
-                    GrainRef = this.grainReferenceConverter.FromKeyString(tableEntry.GrainReference),
+                    GrainId = GrainId.Parse(tableEntry.GrainReference),
                     ReminderName = tableEntry.ReminderName,
                     StartAt = LogFormatter.ParseDate(tableEntry.StartAt),
                     Period = TimeSpan.Parse(tableEntry.Period),
@@ -74,9 +73,7 @@ namespace Orleans.Runtime.ReminderService
             }
             catch (Exception exc)
             {
-                var error =
-                    $"Failed to parse ReminderTableEntry: {tableEntry}. This entry is corrupt, going to ignore it.";
-                this.logger.Error((int)AzureReminderErrorCode.AzureTable_49, error, exc);
+                this.logger.LogError((int)AzureReminderErrorCode.AzureTable_49, exc, "Failed to parse ReminderTableEntry: {TableEntry}. This entry is corrupt, going to ignore it.", tableEntry);
                 throw;
             }
             finally
@@ -84,20 +81,22 @@ namespace Orleans.Runtime.ReminderService
                 string serviceIdStr = this.remTableManager.ServiceId;
                 if (!tableEntry.ServiceId.Equals(serviceIdStr))
                 {
-                    var error =
-                        $"Read a reminder entry for wrong Service id. Read {tableEntry}, but my service id is {serviceIdStr}. Going to discard it.";
-                    this.logger.Warn((int)AzureReminderErrorCode.AzureTable_ReadWrongReminder, error);
-                    throw new OrleansException(error);
+                    this.logger.LogWarning(
+                        (int)AzureReminderErrorCode.AzureTable_ReadWrongReminder,
+                        "Read a reminder entry for wrong Service id. Read {TableEntry}, but my service id is {ServiceId}. Going to discard it.",
+                        tableEntry,
+                        serviceIdStr);
+                    throw new OrleansException($"Read a reminder entry for wrong Service id. Read {tableEntry}, but my service id is {serviceIdStr}. Going to discard it.");
                 }
             }
         }
 
         private static ReminderTableEntry ConvertToTableEntry(ReminderEntry remEntry, string serviceId, string deploymentId)
         {
-            string partitionKey = ReminderTableEntry.ConstructPartitionKey(serviceId, remEntry.GrainRef);
-            string rowKey = ReminderTableEntry.ConstructRowKey(remEntry.GrainRef, remEntry.ReminderName);
+            string partitionKey = ReminderTableEntry.ConstructPartitionKey(serviceId, remEntry.GrainId);
+            string rowKey = ReminderTableEntry.ConstructRowKey(remEntry.GrainId, remEntry.ReminderName);
 
-            var consistentHash = remEntry.GrainRef.GetUniformHashCode();
+            var consistentHash = remEntry.GrainId.GetUniformHashCode();
 
             return new ReminderTableEntry
             {
@@ -106,13 +105,13 @@ namespace Orleans.Runtime.ReminderService
 
                 ServiceId = serviceId,
                 DeploymentId = deploymentId,
-                GrainReference = remEntry.GrainRef.ToKeyString(),
+                GrainReference = remEntry.GrainId.ToString(),
                 ReminderName = remEntry.ReminderName,
 
                 StartAt = LogFormatter.PrintDate(remEntry.StartAt),
                 Period = remEntry.Period.ToString(),
 
-                GrainRefConsistentHash = string.Format("{0:X8}", consistentHash),
+                GrainRefConsistentHash = consistentHash.ToString("X8"),
                 ETag = new ETag(remEntry.ETag),
             };
         }
@@ -122,19 +121,20 @@ namespace Orleans.Runtime.ReminderService
             return this.remTableManager.DeleteTableEntries();
         }
 
-        public async Task<ReminderTableData> ReadRows(GrainReference key)
+        public async Task<ReminderTableData> ReadRows(GrainId grainId)
         {
             try
             {
-                var entries = await this.remTableManager.FindReminderEntries(key);
+                var entries = await this.remTableManager.FindReminderEntries(grainId);
                 ReminderTableData data = ConvertFromTableEntryList(entries);
-                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.Trace("Read for grain {0} Table=" + Environment.NewLine + "{1}", key, data.ToString());
+                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.LogTrace($"Read for grain {{GrainId}} Table={Environment.NewLine}{{Data}}", grainId, data.ToString());
                 return data;
             }
             catch (Exception exc)
             {
-                this.logger.Warn((int)AzureReminderErrorCode.AzureTable_47,
-                    $"Intermediate error reading reminders for grain {key} in table {this.remTableManager.TableName}.", exc);
+                this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_47,
+                    exc,
+                    "Intermediate error reading reminders for grain {GrainId} in table {TableName}.", grainId, this.remTableManager.TableName);
                 throw;
             }
         }
@@ -145,29 +145,31 @@ namespace Orleans.Runtime.ReminderService
             {
                 var entries = await this.remTableManager.FindReminderEntries(begin, end);
                 ReminderTableData data = ConvertFromTableEntryList(entries);
-                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.Trace("Read in {0} Table=" + Environment.NewLine + "{1}", RangeFactory.CreateRange(begin, end), data);
+                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.LogTrace($"Read in {{RingRange}} Table={Environment.NewLine}{{Data}}", RangeFactory.CreateRange(begin, end), data);
                 return data;
             }
             catch (Exception exc)
             {
-                this.logger.Warn((int)AzureReminderErrorCode.AzureTable_40,
-                    $"Intermediate error reading reminders in range {RangeFactory.CreateRange(begin, end)} for table {this.remTableManager.TableName}.", exc);
+                this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_40,
+                    exc,
+                    "Intermediate error reading reminders in range {RingRange} for table {TableName}.", RangeFactory.CreateRange(begin, end), this.remTableManager.TableName);
                 throw;
             }
         }
 
-        public async Task<ReminderEntry> ReadRow(GrainReference grainRef, string reminderName)
+        public async Task<ReminderEntry> ReadRow(GrainId grainId, string reminderName)
         {
             try
             {
-                if (this.logger.IsEnabled(LogLevel.Debug)) this.logger.Debug("ReadRow grainRef = {0} reminderName = {1}", grainRef, reminderName);
-                var result = await this.remTableManager.FindReminderEntry(grainRef, reminderName);
+                if (this.logger.IsEnabled(LogLevel.Debug)) this.logger.LogDebug("ReadRow grainRef = {GrainId} reminderName = {ReminderName}", grainId, reminderName);
+                var result = await this.remTableManager.FindReminderEntry(grainId, reminderName);
                 return result.Entity is null ? null : ConvertFromTableEntry(result.Entity, result.ETag);
             }
             catch (Exception exc)
             {
-                this.logger.Warn((int)AzureReminderErrorCode.AzureTable_46,
-                    $"Intermediate error reading row with grainId = {grainRef} reminderName = {reminderName} from table {this.remTableManager.TableName}.", exc);
+                this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_46,
+                    exc,
+                    "Intermediate error reading row with grainId = {GrainId} reminderName = {ReminderName} from table {TableName}.", grainId, reminderName, this.remTableManager.TableName);
                 throw;
             }
         }
@@ -176,49 +178,51 @@ namespace Orleans.Runtime.ReminderService
         {
             try
             {
-                if (this.logger.IsEnabled(LogLevel.Debug)) this.logger.Debug("UpsertRow entry = {0}", entry.ToString());
+                if (this.logger.IsEnabled(LogLevel.Debug)) this.logger.LogDebug("UpsertRow entry = {Data}", entry.ToString());
                 ReminderTableEntry remTableEntry = ConvertToTableEntry(entry, this.remTableManager.ServiceId, this.remTableManager.ClusterId);
 
                 string result = await this.remTableManager.UpsertRow(remTableEntry);
                 if (result == null)
                 {
-                    this.logger.Warn((int)AzureReminderErrorCode.AzureTable_45,
-                        $"Upsert failed on the reminder table. Will retry. Entry = {entry.ToString()}");
+                    this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_45,
+                        "Upsert failed on the reminder table. Will retry. Entry = {Data}", entry.ToString());
                 }
                 return result;
             }
             catch (Exception exc)
             {
-                this.logger.Warn((int)AzureReminderErrorCode.AzureTable_42,
-                    $"Intermediate error upserting reminder entry {entry.ToString()} to the table {this.remTableManager.TableName}.", exc);
+                this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_42,
+                    exc,
+                    "Intermediate error upserting reminder entry {Data} to the table {TableName}.", entry.ToString(), this.remTableManager.TableName);
                 throw;
             }
         }
 
-        public async Task<bool> RemoveRow(GrainReference grainRef, string reminderName, string eTag)
+        public async Task<bool> RemoveRow(GrainId grainId, string reminderName, string eTag)
         {
             var entry = new ReminderTableEntry
             {
-                PartitionKey = ReminderTableEntry.ConstructPartitionKey(this.remTableManager.ServiceId, grainRef),
-                RowKey = ReminderTableEntry.ConstructRowKey(grainRef, reminderName),
+                PartitionKey = ReminderTableEntry.ConstructPartitionKey(this.remTableManager.ServiceId, grainId),
+                RowKey = ReminderTableEntry.ConstructRowKey(grainId, reminderName),
                 ETag = new ETag(eTag),
             };
             try
             {
-                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.Trace("RemoveRow entry = {0}", entry.ToString());
+                if (this.logger.IsEnabled(LogLevel.Trace)) this.logger.LogTrace("RemoveRow entry = {Data}", entry.ToString());
 
                 bool result = await this.remTableManager.DeleteReminderEntryConditionally(entry, eTag);
                 if (result == false)
                 {
-                    this.logger.Warn((int)AzureReminderErrorCode.AzureTable_43,
-                        $"Delete failed on the reminder table. Will retry. Entry = {entry}");
+                    this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_43,
+                        "Delete failed on the reminder table. Will retry. Entry = {Data}", entry);
                 }
                 return result;
             }
             catch (Exception exc)
             {
-                this.logger.Warn((int)AzureReminderErrorCode.AzureTable_44,
-                    $"Intermediate error when deleting reminder entry {entry} to the table {this.remTableManager.TableName}.", exc);
+                this.logger.LogWarning((int)AzureReminderErrorCode.AzureTable_44,
+                    exc,
+                    "Intermediate error when deleting reminder entry {Data} to the table {TableName}.", entry, this.remTableManager.TableName);
                 throw;
             }
         }

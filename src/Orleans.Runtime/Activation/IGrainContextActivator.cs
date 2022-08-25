@@ -28,7 +28,8 @@ namespace Orleans.Runtime
         private readonly IGrainContextActivatorProvider[] _activatorProviders;
         private readonly IConfigureGrainContextProvider[] _configuratorProviders;
         private readonly GrainPropertiesResolver _resolver;
-        private ImmutableDictionary<GrainType, ActivatorEntry> _activators = ImmutableDictionary<GrainType, ActivatorEntry>.Empty;
+        private ImmutableDictionary<GrainType, (IGrainContextActivator Activator, IConfigureGrainContext[] ConfigureActions)> _activators
+            = ImmutableDictionary<GrainType, (IGrainContextActivator, IConfigureGrainContext[])>.Empty;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GrainContextActivator"/> class.
@@ -68,7 +69,7 @@ namespace Orleans.Runtime
             return result;
         }
 
-        private ActivatorEntry CreateActivator(GrainType grainType)
+        private (IGrainContextActivator, IConfigureGrainContext[]) CreateActivator(GrainType grainType)
         {
             lock (_lockObj)
             {
@@ -98,28 +99,12 @@ namespace Orleans.Runtime
                         }
                     }
 
-                    var applicableConfigureActions = configureActions.Count > 0 ? configureActions.ToArray() : Array.Empty<IConfigureGrainContext>();
-                    configuredActivator = new ActivatorEntry(unconfiguredActivator, applicableConfigureActions);
+                    configuredActivator = (unconfiguredActivator, configureActions.ToArray());
                     _activators = _activators.SetItem(grainType, configuredActivator);
                 }
 
                 return configuredActivator;
             }
-        }
-
-        private readonly struct ActivatorEntry
-        {
-            public ActivatorEntry(
-                IGrainContextActivator activator,
-                IConfigureGrainContext[] configureActions)
-            {
-                this.Activator = activator;
-                this.ConfigureActions = configureActions;
-            }
-
-            public IGrainContextActivator Activator { get; }
-
-            public IConfigureGrainContext[] ConfigureActions { get; }
         }
     }
 
@@ -191,6 +176,7 @@ namespace Orleans.Runtime
         private readonly GrainClassMap _grainClassMap;
         private readonly IOptions<SiloMessagingOptions> _messagingOptions;
         private readonly IOptions<GrainCollectionOptions> _collectionOptions;
+        private readonly IOptions<SchedulingOptions> _schedulingOptions;
         private readonly PlacementStrategyResolver _placementStrategyResolver;
         private readonly IGrainRuntime _grainRuntime;
         private readonly ILogger<Grain> _logger;
@@ -207,6 +193,7 @@ namespace Orleans.Runtime
         /// <param name="placementStrategyResolver">The grain placement strategy resolver.</param>
         /// <param name="messagingOptions">The messaging options.</param>
         /// <param name="collectionOptions">The grain activation collection options</param>
+        /// <param name="schedulingOptions">The scheduling options</param>
         /// <param name="grainRuntime">The grain runtime.</param>
         /// <param name="logger">The logger.</param>
         /// <param name="serviceProvider">The service provider.</param>
@@ -219,6 +206,7 @@ namespace Orleans.Runtime
             PlacementStrategyResolver placementStrategyResolver,
             IOptions<SiloMessagingOptions> messagingOptions,
             IOptions<GrainCollectionOptions> collectionOptions,
+            IOptions<SchedulingOptions> schedulingOptions,
             IGrainRuntime grainRuntime,
             ILogger<Grain> logger,
             IServiceProvider serviceProvider)
@@ -231,6 +219,7 @@ namespace Orleans.Runtime
             _placementStrategyResolver = placementStrategyResolver;
             _messagingOptions = messagingOptions;
             _collectionOptions = collectionOptions;
+            _schedulingOptions = schedulingOptions;
             _grainRuntime = grainRuntime;
             _logger = logger;
             _serviceProvider = serviceProvider;
@@ -253,6 +242,7 @@ namespace Orleans.Runtime
                 _placementStrategyResolver,
                 _messagingOptions,
                 _collectionOptions,
+                _schedulingOptions,
                 _grainRuntime,
                 _logger,
                 _grainReferenceActivator,

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Orleans;
 using Orleans.Configuration;
+using Orleans.Hosting;
 using Orleans.Messaging;
 using Orleans.Runtime;
 using Orleans.TestingHost;
@@ -22,7 +23,7 @@ namespace Tester.ClientConnectionTests
     {
         protected override void ConfigureTestCluster(TestClusterBuilder builder)
         {
-            builder.Options.UseInMemoryTransport = false;
+            builder.Options.ConnectionTransport = ConnectionTransportType.TcpSocket;
         }
 
         /// <summary>

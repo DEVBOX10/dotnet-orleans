@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -8,11 +7,12 @@ using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.CodeGeneration;
-using Orleans.Configuration;
 using Orleans.Metadata;
 using Orleans.Runtime;
 using Orleans.Runtime.Versions;
+using Orleans.Serialization.Cloning;
 using Orleans.Serialization.Configuration;
+using Orleans.Serialization.Serializers;
 using Orleans.Serialization.TypeSystem;
 
 namespace Orleans.GrainReferences
@@ -25,7 +25,7 @@ namespace Orleans.GrainReferences
         private readonly object _lockObj = new object();
         private readonly IServiceProvider _serviceProvider;
         private readonly IGrainReferenceActivatorProvider[] _providers;
-        private Dictionary<(GrainType, GrainInterfaceType), Entry> _activators = new Dictionary<(GrainType, GrainInterfaceType), Entry>();
+        private Dictionary<(GrainType, GrainInterfaceType), IGrainReferenceActivator> _activators = new();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GrainReferenceActivator"/> class.
@@ -53,7 +53,7 @@ namespace Orleans.GrainReferences
                 entry = CreateActivator(grainId.Type, interfaceType);
             }
 
-            var result = entry.Activator.CreateReference(grainId);
+            var result = entry.CreateReference(grainId);
             return result;
         }
 
@@ -64,7 +64,7 @@ namespace Orleans.GrainReferences
         /// <param name="interfaceType">the grain interface type.</param>
         /// <returns>An activator for the provided arguments.</returns>
         /// <exception cref="InvalidOperationException">No suitable activator was found.</exception>
-        private Entry CreateActivator(GrainType grainType, GrainInterfaceType interfaceType)
+        private IGrainReferenceActivator CreateActivator(GrainType grainType, GrainInterfaceType interfaceType)
         {
             lock (_lockObj)
             {
@@ -84,32 +84,12 @@ namespace Orleans.GrainReferences
                         throw new InvalidOperationException($"Unable to find an {nameof(IGrainReferenceActivatorProvider)} for grain type {grainType}");
                     }
 
-                    entry = new Entry(activator);
-                    _activators = new Dictionary<(GrainType, GrainInterfaceType), Entry>(_activators) { [(grainType, interfaceType)] = entry };
+                    entry = activator;
+                    _activators = new(_activators) { [(grainType, interfaceType)] = entry };
                 }
 
                 return entry;
             }
-        }
-
-        /// <summary>
-        /// Holds a grain reference activator.
-        /// </summary>
-        private readonly struct Entry
-        {
-            /// <summary>
-            /// Initializes a new instance of the <see cref="Entry"/> struct.
-            /// </summary>
-            /// <param name="activator">The activator.</param>
-            public Entry(IGrainReferenceActivator activator)
-            {
-                this.Activator = activator;
-            }
-
-            /// <summary>
-            /// Gets the grain reference activator.
-            /// </summary>
-            public IGrainReferenceActivator Activator { get; }
         }
     }
 
@@ -118,6 +98,8 @@ namespace Orleans.GrainReferences
     /// </summary>
     internal class UntypedGrainReferenceActivatorProvider : IGrainReferenceActivatorProvider
     {
+        private readonly CopyContextPool _copyContextPool;
+        private readonly CodecProvider _codecProvider;
         private readonly GrainVersionManifest _versionManifest;
         private readonly IServiceProvider _serviceProvider;
         private IGrainReferenceRuntime _grainReferenceRuntime;
@@ -126,10 +108,18 @@ namespace Orleans.GrainReferences
         /// Initializes a new instance of the <see cref="UntypedGrainReferenceActivatorProvider"/> class.
         /// </summary>
         /// <param name="manifest">The grain version manifest.</param>
+        /// <param name="copyContextPool">The copy context pool.</param>
+        /// <param name="codecProvider">The serialization codec provider.</param>
         /// <param name="serviceProvider">The service provider.</param>
-        public UntypedGrainReferenceActivatorProvider(GrainVersionManifest manifest, IServiceProvider serviceProvider)
+        public UntypedGrainReferenceActivatorProvider(
+            GrainVersionManifest manifest,
+            CodecProvider codecProvider,
+            CopyContextPool copyContextPool,
+            IServiceProvider serviceProvider)
         {
             _versionManifest = manifest;
+            _codecProvider = codecProvider;
+            _copyContextPool = copyContextPool;
             _serviceProvider = serviceProvider;
         }
 
@@ -143,9 +133,17 @@ namespace Orleans.GrainReferences
             }
 
             var interfaceVersion = _versionManifest.GetLocalVersion(interfaceType);
-       
+
             var runtime = _grainReferenceRuntime ??= _serviceProvider.GetRequiredService<IGrainReferenceRuntime>();
-            var shared = new GrainReferenceShared(grainType, interfaceType, interfaceVersion, runtime, InvokeMethodOptions.None, _serviceProvider);
+            var shared = new GrainReferenceShared(
+                grainType,
+                interfaceType,
+                interfaceVersion,
+                runtime,
+                InvokeMethodOptions.None,
+                _codecProvider,
+                _copyContextPool,
+                _serviceProvider);
             activator = new UntypedGrainReferenceActivator(shared);
             return true;
         }
@@ -267,7 +265,7 @@ namespace Orleans.GrainReferences
                 return false;
             }
 
-            if (args is Type[])
+            if (args is not null)
             {
                 result = result.MakeGenericType(args);
             }
@@ -281,6 +279,8 @@ namespace Orleans.GrainReferences
     /// </summary>
     internal class GrainReferenceActivatorProvider : IGrainReferenceActivatorProvider
     {
+        private readonly CopyContextPool _copyContextPool;
+        private readonly CodecProvider _codecProvider;
         private readonly IServiceProvider _serviceProvider;
         private readonly GrainPropertiesResolver _propertiesResolver;
         private readonly RpcProvider _rpcProvider;
@@ -293,16 +293,22 @@ namespace Orleans.GrainReferences
         /// <param name="serviceProvider">The service provider.</param>
         /// <param name="propertiesResolver">The grain property resolver.</param>
         /// <param name="rpcProvider">The proxy object type provider.</param>
+        /// <param name="copyContextPool">The copy context pool.</param>
+        /// <param name="codecProvider">The serialization codec provider.</param>
         /// <param name="grainVersionManifest">The grain version manifest.</param>
         public GrainReferenceActivatorProvider(
             IServiceProvider serviceProvider,
             GrainPropertiesResolver propertiesResolver,
             RpcProvider rpcProvider,
+            CopyContextPool copyContextPool,
+            CodecProvider codecProvider,
             GrainVersionManifest grainVersionManifest)
         {
             _serviceProvider = serviceProvider;
             _propertiesResolver = propertiesResolver;
             _rpcProvider = rpcProvider;
+            _copyContextPool = copyContextPool;
+            _codecProvider = codecProvider;
             _grainVersionManifest = grainVersionManifest;
         }
 
@@ -327,7 +333,15 @@ namespace Orleans.GrainReferences
 
             var invokeMethodOptions = unordered ? InvokeMethodOptions.Unordered : InvokeMethodOptions.None;
             var runtime = _grainReferenceRuntime ??= _serviceProvider.GetRequiredService<IGrainReferenceRuntime>();
-            var shared = new GrainReferenceShared(grainType, interfaceType, interfaceVersion, runtime, invokeMethodOptions, _serviceProvider);
+            var shared = new GrainReferenceShared(
+                grainType,
+                interfaceType,
+                interfaceVersion,
+                runtime,
+                invokeMethodOptions,
+                _codecProvider,
+                _copyContextPool,
+                _serviceProvider);
             activator = new GrainReferenceActivator(proxyType, shared);
             return true;
         }

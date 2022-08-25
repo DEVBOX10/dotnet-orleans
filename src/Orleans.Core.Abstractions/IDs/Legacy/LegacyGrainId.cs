@@ -205,7 +205,7 @@ namespace Orleans.Runtime
         public static bool TryConvertFromGrainId(GrainId id, out LegacyGrainId legacyId)
         {
             legacyId = FromGrainIdInternal(id);
-            return legacyId is object;
+            return legacyId is not null;
         }
 
         public static LegacyGrainId FromGrainId(GrainId id)
@@ -238,7 +238,7 @@ namespace Orleans.Runtime
             if (keySpan.Length > 32)
             {
                 if (keySpan[32] != '+') return null;
-                keyExt = keySpan.Slice(33).GetUtf8String();
+                keyExt = Encoding.UTF8.GetString(keySpan.Slice(33));
             }
 
             return FindOrCreateGrainId(UniqueKey.NewKey(n0, n1, typeCodeData, keyExt));

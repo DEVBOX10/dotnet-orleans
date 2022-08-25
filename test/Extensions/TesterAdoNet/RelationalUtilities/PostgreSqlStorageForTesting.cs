@@ -1,37 +1,26 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using Orleans.Tests.SqlUtils;
+using TestExtensions;
 using UnitTests.General;
 
 namespace Tester.RelationalUtilities
 {
     class PostgreSqlStorageForTesting : RelationalStorageForTesting
     {
+        protected override string ProviderMoniker => "PostgreSQL";
+
         public PostgreSqlStorageForTesting(string connectionString)
             : base(AdoNetInvariants.InvariantNamePostgreSql, connectionString)
         {
         }
 
-        public override string DefaultConnectionString
-        {
-            get { return @"Server=127.0.0.1;Port=5432;Database=postgres;Integrated Security=true;Pooling=false;"; }
-        }
+        public override string DefaultConnectionString => TestDefaultConfiguration.PostgresConnectionString;
 
         public override string CancellationTestQuery { get { return "SELECT pg_sleep(10); SELECT 1; "; } }
 
         public override string CreateStreamTestTable { get { return "CREATE TABLE StreamingTest(Id integer NOT NULL, StreamData bytea NOT NULL);"; } }
 
-        protected override string[] SetupSqlScriptFileNames
-        {
-            get
-            {
-                return new[] {
-                    "PostgreSQL-Main.sql",
-                    "PostgreSQL-Clustering.sql",
-                    "PostgreSQL-Persistence.sql",
-                    "PostgreSQL-Reminders.sql"
-                };
-            }
-        }
 
         protected override string CreateDatabaseTemplate
         {

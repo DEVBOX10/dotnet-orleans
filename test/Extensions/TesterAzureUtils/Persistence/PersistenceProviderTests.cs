@@ -64,7 +64,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_WriteRead(testName, store);
         }
 
-        [SkippableFact, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableFact, TestCategory("Functional"), TestCategory("AzureStorage")]
         public async Task PersistenceProvider_Azure_Read()
         {
             TestUtils.CheckForAzureStorage();
@@ -74,7 +74,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_Read(testName, store);
         }
 
-        [SkippableTheory, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableTheory, TestCategory("Functional"), TestCategory("AzureStorage")]
         [InlineData(null, false)]
         [InlineData(null, true)]
         [InlineData(15 * 64 * 1024 - 256, false)]
@@ -94,7 +94,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_WriteRead(testName, store, grainState);
         }
 
-        [SkippableTheory, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableTheory, TestCategory("Functional"), TestCategory("AzureStorage")]
         [InlineData(null, false)]
         [InlineData(null, true)]
         [InlineData(15 * 64 * 1024 - 256, false)]
@@ -114,7 +114,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_WriteClearRead(testName, store, grainState);
         }
 
-        [SkippableTheory, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableTheory, TestCategory("Functional"), TestCategory("AzureStorage")]
         [InlineData(null, true, false)]
         [InlineData(null, false, true)]
         [InlineData(15 * 32 * 1024 - 256, true, false)]
@@ -141,7 +141,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_Read(testName, store, grainState, grainId);
         }
 
-        [SkippableTheory, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableTheory, TestCategory("Functional"), TestCategory("AzureStorage")]
         [InlineData(null, true, false)]
         [InlineData(null, false, true)]
         [InlineData(15 * 32 * 1024 - 256, true, false)]
@@ -171,7 +171,7 @@ namespace Tester.AzureUtils.Persistence
             await Test_PersistenceProvider_WriteRead(testName, store, grainState, grainId);
         }
 
-        [SkippableTheory, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableTheory, TestCategory("Functional"), TestCategory("AzureStorage")]
         [InlineData(null, false)]
         [InlineData(null, true)]
         [InlineData(15 * 64 * 1024 - 256, false)]
@@ -200,7 +200,7 @@ namespace Tester.AzureUtils.Persistence
             Assert.Equal(initialState.C, convertedState.C);
         }
 
-        [SkippableFact, TestCategory("Functional"), TestCategory("Azure")]
+        [SkippableFact, TestCategory("Functional"), TestCategory("AzureStorage")]
         public async Task AzureTableStorage_ConvertJsonToFromStorageFormatWithCustomJsonProperties()
         {
             TestUtils.CheckForAzureStorage();
@@ -229,7 +229,7 @@ namespace Tester.AzureUtils.Persistence
                 MockCallsOnly = true
             }, NullLoggerFactory.Instance, this.providerRuntime.ServiceProvider.GetService<IGrainFactory>());
 
-            GrainReference reference = (GrainReference)this.fixture.InternalGrainFactory.GetGrain(LegacyGrainId.NewId());
+            var reference = (GrainId)LegacyGrainId.NewId();
             var state = TestStoreGrainState.NewRandomState();
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -290,7 +290,7 @@ namespace Tester.AzureUtils.Persistence
         private async Task Test_PersistenceProvider_Read(string grainTypeName, IGrainStorage store,
             GrainState<TestStoreGrainState> grainState = null, GrainId grainId = default)
         {
-            var reference = (GrainReference)this.fixture.InternalGrainFactory.GetGrain(grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId);
+            var reference = grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId;
 
             if (grainState == null)
             {
@@ -315,7 +315,7 @@ namespace Tester.AzureUtils.Persistence
         private async Task<GrainState<TestStoreGrainState>> Test_PersistenceProvider_WriteRead(string grainTypeName,
             IGrainStorage store, GrainState<TestStoreGrainState> grainState = null, GrainId grainId = default)
         {
-            GrainReference reference = (GrainReference)this.fixture.InternalGrainFactory.GetGrain(grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId);
+            var reference = grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId;
 
             if (grainState == null)
             {
@@ -347,7 +347,7 @@ namespace Tester.AzureUtils.Persistence
         private async Task<GrainState<TestStoreGrainState>> Test_PersistenceProvider_WriteClearRead(string grainTypeName,
             IGrainStorage store, GrainState<TestStoreGrainState> grainState = null, GrainId grainId = default)
         {
-            GrainReference reference = (GrainReference)this.fixture.InternalGrainFactory.GetGrain(grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId);
+            var reference = grainId.IsDefault ? (GrainId)LegacyGrainId.NewId() : grainId;
 
             if (grainState == null)
             {
@@ -401,7 +401,7 @@ namespace Tester.AzureUtils.Persistence
                     State = new TestStoreGrainStateWithCustomJsonProperties
                     {
                         String = aPropertyLength == null
-                            ? ThreadSafeRandom.Next().ToString(CultureInfo.InvariantCulture)
+                            ? Random.Shared.Next().ToString(CultureInfo.InvariantCulture)
                             : GenerateRandomDigitString(aPropertyLength.Value)
                     }
                 };
@@ -412,7 +412,7 @@ namespace Tester.AzureUtils.Persistence
                 var characters = new char[stringLength];
                 for (var i = 0; i < stringLength; ++i)
                 {
-                    characters[i] = (char)ThreadSafeRandom.Next('0', '9' + 1);
+                    characters[i] = (char)Random.Shared.Next('0', '9' + 1);
                 }
                 return new string(characters);
             }

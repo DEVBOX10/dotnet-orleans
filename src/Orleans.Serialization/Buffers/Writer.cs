@@ -27,7 +27,7 @@ namespace Orleans.Serialization.Buffers
         /// <param name="session">The session.</param>
         /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<TBufferWriter> Create<TBufferWriter>(TBufferWriter destination, SerializerSession session) where TBufferWriter : IBufferWriter<byte> => new Writer<TBufferWriter>(destination, session);
+        public static Writer<TBufferWriter> Create<TBufferWriter>(TBufferWriter destination, SerializerSession session) where TBufferWriter : IBufferWriter<byte> => new(destination, session);
 
         /// <summary>
         /// Creates a writer which writes to the specified destination.
@@ -36,17 +36,7 @@ namespace Orleans.Serialization.Buffers
         /// <param name="session">The session.</param>
         /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<MemoryStreamBufferWriter> Create(MemoryStream destination, SerializerSession session) => new Writer<MemoryStreamBufferWriter>(new MemoryStreamBufferWriter(destination), session);
-
-        /// <summary>
-        /// Creates a writer which writes to the specified destination.
-        /// </summary>
-        /// <param name="destination">The destination.</param>
-        /// <param name="session">The session.</param>
-        /// <param name="sizeHint">The size hint.</param>
-        /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<PoolingStreamBufferWriter> CreatePooled(Stream destination, SerializerSession session, int sizeHint = 0) => new Writer<PoolingStreamBufferWriter>(new PoolingStreamBufferWriter(destination, sizeHint), session);
+        public static Writer<MemoryStreamBufferWriter> Create(MemoryStream destination, SerializerSession session) => new(new MemoryStreamBufferWriter(destination), session);
 
         /// <summary>
         /// Creates a writer which writes to the specified destination.
@@ -56,7 +46,17 @@ namespace Orleans.Serialization.Buffers
         /// <param name="sizeHint">The size hint.</param>
         /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<ArrayStreamBufferWriter> Create(Stream destination, SerializerSession session, int sizeHint = 0) => new Writer<ArrayStreamBufferWriter>(new ArrayStreamBufferWriter(destination, sizeHint), session);
+        public static Writer<PoolingStreamBufferWriter> CreatePooled(Stream destination, SerializerSession session, int sizeHint = 0) => new(new PoolingStreamBufferWriter(destination, sizeHint), session);
+
+        /// <summary>
+        /// Creates a writer which writes to the specified destination.
+        /// </summary>
+        /// <param name="destination">The destination.</param>
+        /// <param name="session">The session.</param>
+        /// <param name="sizeHint">The size hint.</param>
+        /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Writer<ArrayStreamBufferWriter> Create(Stream destination, SerializerSession session, int sizeHint = 0) => new(new ArrayStreamBufferWriter(destination, sizeHint), session);
 
         /// <summary>
         /// Creates a writer which writes to the specified destination.
@@ -74,7 +74,7 @@ namespace Orleans.Serialization.Buffers
         /// <param name="session">The session.</param>
         /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<MemoryBufferWriter> Create(Memory<byte> output, SerializerSession session) => new Writer<MemoryBufferWriter>(new MemoryBufferWriter(output), session);
+        public static Writer<MemoryBufferWriter> Create(Memory<byte> output, SerializerSession session) => new(new MemoryBufferWriter(output), session);
 
         /// <summary>
         /// Creates a writer which writes to the specified destination.
@@ -83,7 +83,15 @@ namespace Orleans.Serialization.Buffers
         /// <param name="session">The session.</param>
         /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Writer<SpanBufferWriter> Create(Span<byte> output, SerializerSession session) => new Writer<SpanBufferWriter>(new SpanBufferWriter(output), output, session);
+        public static Writer<SpanBufferWriter> Create(Span<byte> output, SerializerSession session) => new(new SpanBufferWriter(output), output, session);
+
+        /// <summary>
+        /// Creates a writer which writes to a pooled buffer.
+        /// </summary>
+        /// <param name="session">The session.</param>
+        /// <returns>A new <see cref="Writer{TBufferWriter}"/>.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Writer<PooledArrayBufferWriter> CreatePooled(SerializerSession session) => new(new PooledArrayBufferWriter(), session);
     }
 
     /// <summary>
@@ -259,7 +267,23 @@ namespace Orleans.Serialization.Buffers
         }
 
         /// <summary>
-        /// Allocates room for the specified number of bytes.
+        /// Allocates additional buffer space.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void AllocateUnspecified()
+        {
+            // Commit the bytes which have been written.
+            _output.Advance(_bufferPos);
+
+            _currentSpan = _output.GetSpan();
+
+            // Update internal state for the new buffer.
+            _previousBuffersSize += _bufferPos;
+            _bufferPos = 0;
+        }
+
+        /// <summary>
+        /// Allocates buffer space for the specified number of bytes.
         /// </summary>
         /// <param name="length">The number of bytes to reserve.</param>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -303,10 +327,10 @@ namespace Orleans.Serialization.Buffers
             {
                 // Write as much as possible/necessary into the current segment.
                 var writeSize = Math.Min(_currentSpan.Length - _bufferPos, input.Length);
-                input.Slice(0, writeSize).CopyTo(WritableSpan);
+                input[..writeSize].CopyTo(WritableSpan);
                 _bufferPos += writeSize;
 
-                input = input.Slice(writeSize);
+                input = input[writeSize..];
 
                 if (input.Length == 0)
                 {
@@ -314,7 +338,7 @@ namespace Orleans.Serialization.Buffers
                 }
 
                 // The current segment is full but there is more to write.
-                Allocate(input.Length);
+                AllocateUnspecified();
             }
         }
 

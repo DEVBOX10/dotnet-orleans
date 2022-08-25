@@ -43,7 +43,10 @@ namespace Orleans.Clustering.DynamoDB
                 this.options.Token,
                 this.options.ProfileName,
                 this.options.ReadCapacityUnits,
-                this.options.WriteCapacityUnits);
+                this.options.WriteCapacityUnits,
+                this.options.UseProvisionedThroughput,
+                this.options.CreateIfNotExists,
+                this.options.UpdateIfExists);
 
             return this.storage.InitializeTable(this.options.TableName,
                 new List<KeySchemaElement>
@@ -76,9 +79,8 @@ namespace Orleans.Clustering.DynamoDB
                 expression, gateway =>
                 {
                     return SiloAddress.New(
-                        new IPEndPoint(
                             IPAddress.Parse(gateway[SiloInstanceRecord.ADDRESS_PROPERTY_NAME].S),
-                            int.Parse(gateway[SiloInstanceRecord.PROXY_PORT_PROPERTY_NAME].N)),
+                            int.Parse(gateway[SiloInstanceRecord.PROXY_PORT_PROPERTY_NAME].N),
                             int.Parse(gateway[SiloInstanceRecord.GENERATION_PROPERTY_NAME].N)).ToGatewayUri();
                 });
 

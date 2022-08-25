@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 
 namespace Tester.AzureUtils
 {
-    [TestCategory("Azure"), TestCategory("Storage")]
+    [TestCategory("AzureStorage"), TestCategory("Storage")]
     public class AzureTableGrainDirectoryTests : GrainDirectoryTests<AzureTableGrainDirectory>
     {
         public AzureTableGrainDirectoryTests(ITestOutputHelper testOutput) : base(testOutput)
@@ -23,6 +23,7 @@ namespace Tester.AzureUtils
         protected override AzureTableGrainDirectory GetGrainDirectory()
         {
             TestUtils.CheckForAzureStorage();
+            StorageEmulatorUtilities.EnsureEmulatorIsNotUsed();
 
             var clusterOptions = new ClusterOptions
             {

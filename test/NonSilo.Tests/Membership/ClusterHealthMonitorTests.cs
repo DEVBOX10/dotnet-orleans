@@ -38,7 +38,6 @@ namespace NonSilo.Tests.Membership
 
         public ClusterHealthMonitorTests(ITestOutputHelper output)
         {
-            MessagingStatisticsGroup.Init();
             this.output = output;
             this.loggerFactory = new LoggerFactory(new[] { new XunitLoggerProvider(this.output) });
 
@@ -148,7 +147,7 @@ namespace NonSilo.Tests.Membership
                 {
                     IntermediaryHealthScore = 0,
                     ProbeResponseTime = TimeSpan.FromMilliseconds(1),
-                    Succeeded = true 
+                    Succeeded = true
                 });
             });
 
@@ -215,7 +214,7 @@ namespace NonSilo.Tests.Membership
             lastVersion = testAccessor.ObservedVersion;
 
             // Now that this silo is active, it should be monitoring some fraction of the other active silos
-            Assert.NotEmpty(testAccessor.MonitoredSilos);
+            await Until(() => testAccessor.MonitoredSilos.Count > 0);
             Assert.NotEmpty(this.timers);
             Assert.DoesNotContain(testAccessor.MonitoredSilos, s => s.Key.Equals(this.localSilo));
             Assert.Equal(clusterMembershipOptions.NumProbedSilos, testAccessor.MonitoredSilos.Count);
@@ -328,7 +327,7 @@ namespace NonSilo.Tests.Membership
                 {
                     IntermediaryHealthScore = 0,
                     ProbeResponseTime = TimeSpan.FromMilliseconds(1),
-                    Succeeded = true 
+                    Succeeded = true
                 });
             });
 

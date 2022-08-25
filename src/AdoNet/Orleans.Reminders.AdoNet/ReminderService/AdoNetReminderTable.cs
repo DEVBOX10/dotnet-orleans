@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -5,31 +6,28 @@ using Orleans.Reminders.AdoNet.Storage;
 
 namespace Orleans.Runtime.ReminderService
 {
-    internal class AdoNetReminderTable : IReminderTable
+    internal sealed class AdoNetReminderTable : IReminderTable
     {
-        private readonly GrainReferenceKeyStringConverter grainReferenceConverter;
         private readonly AdoNetReminderTableOptions options;
         private readonly string serviceId;
         private RelationalOrleansQueries orleansQueries;
 
         public AdoNetReminderTable(
-            GrainReferenceKeyStringConverter grainReferenceConverter, 
             IOptions<ClusterOptions> clusterOptions, 
             IOptions<AdoNetReminderTableOptions> storageOptions)
         {
-            this.grainReferenceConverter = grainReferenceConverter;
             this.serviceId = clusterOptions.Value.ServiceId;
             this.options = storageOptions.Value;
         }
 
         public async Task Init()
         {
-            this.orleansQueries = await RelationalOrleansQueries.CreateInstance(this.options.Invariant, this.options.ConnectionString, this.grainReferenceConverter);
+            this.orleansQueries = await RelationalOrleansQueries.CreateInstance(this.options.Invariant, this.options.ConnectionString);
         }
 
-        public Task<ReminderTableData> ReadRows(GrainReference grainRef)
+        public Task<ReminderTableData> ReadRows(GrainId grainId)
         {
-            return this.orleansQueries.ReadReminderRowsAsync(this.serviceId, grainRef);
+            return this.orleansQueries.ReadReminderRowsAsync(this.serviceId, grainId);
         }
 
         public Task<ReminderTableData> ReadRows(uint beginHash, uint endHash)
@@ -37,19 +35,24 @@ namespace Orleans.Runtime.ReminderService
             return this.orleansQueries.ReadReminderRowsAsync(this.serviceId, beginHash, endHash);
         }
 
-        public Task<ReminderEntry> ReadRow(GrainReference grainRef, string reminderName)
+        public Task<ReminderEntry> ReadRow(GrainId grainId, string reminderName)
         {
-            return this.orleansQueries.ReadReminderRowAsync(this.serviceId, grainRef, reminderName);
+            return this.orleansQueries.ReadReminderRowAsync(this.serviceId, grainId, reminderName);
         }   
         
         public Task<string> UpsertRow(ReminderEntry entry)
         {
-            return this.orleansQueries.UpsertReminderRowAsync(this.serviceId, entry.GrainRef, entry.ReminderName, entry.StartAt, entry.Period);            
+            if (entry.StartAt.Kind is DateTimeKind.Unspecified)
+            {
+                entry.StartAt = new DateTime(entry.StartAt.Ticks, DateTimeKind.Utc);
+            }
+
+            return this.orleansQueries.UpsertReminderRowAsync(this.serviceId, entry.GrainId, entry.ReminderName, entry.StartAt, entry.Period);            
         }
 
-        public Task<bool> RemoveRow(GrainReference grainRef, string reminderName, string eTag)
+        public Task<bool> RemoveRow(GrainId grainId, string reminderName, string eTag)
         {
-            return this.orleansQueries.DeleteReminderRowAsync(this.serviceId, grainRef, reminderName, eTag);            
+            return this.orleansQueries.DeleteReminderRowAsync(this.serviceId, grainId, reminderName, eTag);            
         }
 
         public Task TestOnlyClearTable()

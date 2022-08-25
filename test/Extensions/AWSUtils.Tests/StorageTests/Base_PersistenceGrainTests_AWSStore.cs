@@ -1,3 +1,4 @@
+using Orleans.Internal;
 using Orleans.TestingHost;
 using System;
 using System.Collections.Generic;
@@ -89,7 +90,7 @@ namespace AWSUtils.Tests.StorageTests
 
         protected async Task Grain_LongKey_AWSStore_Read_Write()
         {
-            long id = random.Next();
+            long id = Random.Shared.Next();
             IAWSStorageTestGrain_LongKey grain = this.fixture.GrainFactory.GetGrain<IAWSStorageTestGrain_LongKey>(id);
 
             int val = await grain.GetValue();
@@ -111,8 +112,8 @@ namespace AWSUtils.Tests.StorageTests
 
         protected async Task Grain_LongKeyExtended_AWSStore_Read_Write()
         {
-            long id = random.Next();
-            string extKey = random.Next().ToString(CultureInfo.InvariantCulture);
+            long id = Random.Shared.Next();
+            string extKey = Random.Shared.Next().ToString(CultureInfo.InvariantCulture);
 
             IAWSStorageTestGrain_LongExtendedKey
                 grain = this.fixture.GrainFactory.GetGrain<IAWSStorageTestGrain_LongExtendedKey>(id, extKey, null);
@@ -142,7 +143,7 @@ namespace AWSUtils.Tests.StorageTests
         protected async Task Grain_GuidKeyExtended_AWSStore_Read_Write()
         {
             var id = Guid.NewGuid();
-            string extKey = random.Next().ToString(CultureInfo.InvariantCulture);
+            string extKey = Random.Shared.Next().ToString(CultureInfo.InvariantCulture);
 
             IAWSStorageTestGrain_GuidExtendedKey
                 grain = this.fixture.GrainFactory.GetGrain<IAWSStorageTestGrain_GuidExtendedKey>(id, extKey, null);
@@ -171,7 +172,7 @@ namespace AWSUtils.Tests.StorageTests
 
         protected async Task Grain_Generic_AWSStore_Read_Write()
         {
-            long id = random.Next();
+            long id = Random.Shared.Next();
 
             IAWSStorageGenericGrain<int> grain = this.fixture.GrainFactory.GetGrain<IAWSStorageGenericGrain<int>>(id);
 
@@ -194,7 +195,7 @@ namespace AWSUtils.Tests.StorageTests
 
         protected async Task Grain_Generic_AWSStore_DiffTypes()
         {
-            long id1 = random.Next();
+            long id1 = Random.Shared.Next();
             long id2 = id1;
             long id3 = id1;
 
@@ -287,6 +288,9 @@ namespace AWSUtils.Tests.StorageTests
             Assert.Equal(initialServiceId, serviceId);  // "ServiceId same after restart."
             Assert.Equal(initialDeploymentId, this.HostedCluster.Options.ClusterId);  // "ClusterId same after restart."
 
+            // Since the client was destroyed and restarted, the grain reference needs to be recreated.
+            grain = this.fixture.GrainFactory.GetGrain<IAWSStorageTestGrain>(id);
+
             val = await grain.GetValue();
             Assert.Equal(1, val);  // "Value after Write-1"
 
@@ -349,14 +353,13 @@ namespace AWSUtils.Tests.StorageTests
         }
 
 
-        protected async Task Persistence_Silo_StorageProvider_AWS(Type providerType)
+        protected async Task Persistence_Silo_StorageProvider_AWS(string providerName)
         {
             List<SiloHandle> silos = this.HostedCluster.GetActiveSilos().ToList();
             foreach (var silo in silos)
             {
-                string provider = providerType.FullName;
                 ICollection<string> providers = await this.HostedCluster.Client.GetTestHooks(silo).GetStorageProviderNames();
-                Assert.True(providers.Contains(provider), $"No storage provider found: {provider}");
+                Assert.True(providers.Contains(providerName), $"No storage provider found: {providerName}");
             }
         }
 
