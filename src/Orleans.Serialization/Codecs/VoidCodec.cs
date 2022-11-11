@@ -1,18 +1,18 @@
+using System;
+using System.Buffers;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Codecs
 {
     /// <summary>
     /// Serializer for unknown types.
     /// </summary>
-    public sealed class VoidCodec : IFieldCodec<object>
+    internal sealed class VoidCodec : IFieldCodec
     {
         /// <inheritdoc />
-        void IFieldCodec<object>.WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, object value)
+        public void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, object value) where TBufferWriter : IBufferWriter<byte>
         {
             if (!ReferenceCodec.TryWriteReferenceField(ref writer, fieldIdDelta, expectedType, value))
             {
@@ -21,20 +21,12 @@ namespace Orleans.Serialization.Codecs
         }
 
         /// <inheritdoc />
-        object IFieldCodec<object>.ReadValue<TInput>(ref Reader<TInput> reader, Field field)
+        public object ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
-            if (field.WireType != WireType.Reference)
-            {
-                ThrowInvalidWireType(field);
-            }
-
-            return ReferenceCodec.ReadReference<object, TInput>(ref reader, field);
+            field.EnsureWireType(WireType.Reference);
+            return ReferenceCodec.ReadReference(ref reader, field.FieldType);
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowInvalidWireType(Field field) => throw new UnsupportedWireTypeException($"Expected a reference, but encountered wire type of '{field.WireType}'.");
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowNotNullException(object value) => throw new InvalidOperationException(
             $"Expected a value of null, but encountered a value of '{value}'.");
     }
@@ -42,7 +34,7 @@ namespace Orleans.Serialization.Codecs
     /// <summary>
     /// Copier for unknown types.
     /// </summary>
-    public sealed class VoidCopier : IDeepCopier<object>
+    internal sealed class VoidCopier : IDeepCopier
     {
         public object DeepCopy(object input, CopyContext context)
         {
@@ -55,7 +47,6 @@ namespace Orleans.Serialization.Codecs
             return null;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowNotNullException(object value) => throw new InvalidOperationException($"Expected a value of null, but encountered a value of type '{value.GetType()}'.");
     }
 }

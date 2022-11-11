@@ -1,12 +1,10 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 
 namespace Orleans.Serialization
 {
     internal static class ExceptionHelper
     {
-        [MethodImpl(MethodImplOptions.NoInlining)]
         public static T ThrowArgumentOutOfRange<T>(string argument) => throw new ArgumentOutOfRangeException(argument);
     }
 
@@ -56,7 +54,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class FieldIdNotPresentException : SerializerException
+    public sealed class FieldIdNotPresentException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="FieldIdNotPresentException"/> class.
@@ -70,7 +68,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected FieldIdNotPresentException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private FieldIdNotPresentException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -80,7 +78,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class SchemaTypeInvalidException : SerializerException
+    public sealed class SchemaTypeInvalidException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="SchemaTypeInvalidException"/> class.
@@ -94,7 +92,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected SchemaTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private SchemaTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -104,7 +102,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class FieldTypeInvalidException : SerializerException
+    public sealed class FieldTypeInvalidException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="FieldTypeInvalidException"/> class.
@@ -118,7 +116,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected FieldTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private FieldTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -128,7 +126,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class FieldTypeMissingException : SerializerException
+    public sealed class FieldTypeMissingException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="FieldTypeMissingException"/> class.
@@ -143,7 +141,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected FieldTypeMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private FieldTypeMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -153,7 +151,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class ExtendedWireTypeInvalidException : SerializerException
+    public sealed class ExtendedWireTypeInvalidException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="ExtendedWireTypeInvalidException"/> class.
@@ -168,7 +166,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected ExtendedWireTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private ExtendedWireTypeInvalidException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -178,7 +176,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class UnsupportedWireTypeException : SerializerException
+    public sealed class UnsupportedWireTypeException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="UnsupportedWireTypeException"/> class.
@@ -200,7 +198,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected UnsupportedWireTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private UnsupportedWireTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -210,7 +208,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class ReferenceNotFoundException : SerializerException
+    public sealed class ReferenceNotFoundException : SerializerException
     {
         /// <summary>
         /// Gets the target reference.
@@ -243,7 +241,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected ReferenceNotFoundException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private ReferenceNotFoundException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
             TargetReference = info.GetUInt32(nameof(TargetReference));
             TargetReferenceType = (Type)info.GetValue(nameof(TargetReferenceType), typeof(Type));
@@ -263,7 +261,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class UnknownReferencedTypeException : SerializerException
+    public sealed class UnknownReferencedTypeException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="UnknownReferencedTypeException"/> class.
@@ -279,7 +277,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected UnknownReferencedTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private UnknownReferencedTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
             info.AddValue(nameof(Reference), Reference);
         }
@@ -304,7 +302,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class UnknownWellKnownTypeException : SerializerException
+    public sealed class UnknownWellKnownTypeException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="UnknownWellKnownTypeException"/> class.
@@ -320,7 +318,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected UnknownWellKnownTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private UnknownWellKnownTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
             info.AddValue(nameof(Id), Id);
         }
@@ -345,7 +343,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class IllegalTypeException : SerializerException
+    public sealed class IllegalTypeException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="IllegalTypeException"/> class.
@@ -361,7 +359,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected IllegalTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private IllegalTypeException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
             TypeName = info.GetString(nameof(TypeName));
         }
@@ -386,7 +384,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class TypeMissingException : SerializerException
+    public sealed class TypeMissingException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="TypeMissingException"/> class.
@@ -400,7 +398,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected TypeMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private TypeMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -410,7 +408,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class RequiredFieldMissingException : SerializerException
+    public sealed class RequiredFieldMissingException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="RequiredFieldMissingException"/> class.
@@ -425,7 +423,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected RequiredFieldMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private RequiredFieldMissingException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -435,7 +433,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class CodecNotFoundException : SerializerException
+    public sealed class CodecNotFoundException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="CodecNotFoundException"/> class.
@@ -450,7 +448,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected CodecNotFoundException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private CodecNotFoundException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
@@ -460,7 +458,7 @@ namespace Orleans.Serialization
     /// </summary>
     [Serializable]
     [GenerateSerializer]
-    public class UnexpectedLengthPrefixValueException : SerializerException
+    public sealed class UnexpectedLengthPrefixValueException : SerializerException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="UnexpectedLengthPrefixValueException"/> class.
@@ -486,7 +484,7 @@ namespace Orleans.Serialization
         /// </summary>
         /// <param name="info">The <see cref="T:System.Runtime.Serialization.SerializationInfo" /> that holds the serialized object data about the exception being thrown.</param>
         /// <param name="context">The <see cref="T:System.Runtime.Serialization.StreamingContext" /> that contains contextual information about the source or destination.</param>
-        protected UnexpectedLengthPrefixValueException(SerializationInfo info, StreamingContext context) : base(info, context)
+        private UnexpectedLengthPrefixValueException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }

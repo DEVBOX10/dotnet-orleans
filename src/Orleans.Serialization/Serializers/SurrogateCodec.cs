@@ -1,12 +1,11 @@
+using System;
+using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.Codecs;
+using Orleans.Serialization.GeneratedCodeHelpers;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Serializers;
 
@@ -70,10 +69,10 @@ public sealed class SurrogateCodec<TField, TSurrogate, TConverter>
             return ReferenceCodec.ReadReference<TField, TInput>(ref reader, field);
         }
 
-        var placeholderReferenceId = ReferenceCodec.CreateRecordPlaceholder(reader.Session);
-        var fieldType = field.FieldType;
-        if (fieldType is null || fieldType == _fieldType)
+        if (field.FieldType is null || field.FieldType == _fieldType)
         {
+            field.EnsureWireTypeTagDelimited();
+            var placeholderReferenceId = ReferenceCodec.CreateRecordPlaceholder(reader.Session);
             TSurrogate surrogate = default;
             _surrogateSerializer.Deserialize(ref reader, ref surrogate);
             var result = _converter.ConvertFromSurrogate(in surrogate);
@@ -81,15 +80,7 @@ public sealed class SurrogateCodec<TField, TSurrogate, TConverter>
             return result;
         }
 
-        // The type is a descendant, not an exact match, so get the specific serializer for it.
-        var specificSerializer = reader.Session.CodecProvider.GetCodec(fieldType);
-        if (specificSerializer != null)
-        {
-            return (TField)specificSerializer.ReadValue(ref reader, field);
-        }
-
-        ThrowSerializerNotFoundException(fieldType);
-        return default;
+        return reader.DeserializeUnexpectedType<TInput, TField>(ref field);
     }
 
     /// <inheritdoc/>
@@ -100,36 +91,16 @@ public sealed class SurrogateCodec<TField, TSurrogate, TConverter>
             return;
         }
 
-        var fieldType = value.GetType();
-        if (fieldType == _fieldType)
+        if (value.GetType() == typeof(TField))
         {
-            writer.WriteStartObject(fieldIdDelta, expectedType, fieldType);
+            writer.WriteStartObject(fieldIdDelta, expectedType, _fieldType);
             var surrogate = _converter.ConvertToSurrogate(in value);
             _surrogateSerializer.Serialize(ref writer, ref surrogate);
             writer.WriteEndObject();
         }
         else
         {
-            SerializeUnexpectedType(ref writer, fieldIdDelta, expectedType, value, fieldType);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static void SerializeUnexpectedType<TBufferWriter>(
-        ref Writer<TBufferWriter> writer,
-        uint fieldIdDelta,
-        Type expectedType,
-        TField value,
-        Type fieldType) where TBufferWriter : IBufferWriter<byte>
-    {
-        var specificSerializer = writer.Session.CodecProvider.GetCodec(fieldType);
-        if (specificSerializer != null)
-        {
-            specificSerializer.WriteField(ref writer, fieldIdDelta, expectedType, value);
-        }
-        else
-        {
-            ThrowSerializerNotFoundException(fieldType);
+            writer.SerializeUnexpectedType(fieldIdDelta, expectedType, value);
         }
     }
 
@@ -162,11 +133,6 @@ public sealed class SurrogateCodec<TField, TSurrogate, TConverter>
         _populator.Populate(copy, output);
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    [DoesNotReturn]
-    private static void ThrowSerializerNotFoundException(Type type) => throw new KeyNotFoundException($"Could not find a serializer of type {type}.");
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
     [DoesNotReturn]
     private static void ThrowNoPopulatorException() => throw new NotSupportedException($"Surrogate type {typeof(TConverter)} does not implement {typeof(IPopulator<TField, TSurrogate>)} and therefore cannot be used in an inheritance hierarchy.");
 }

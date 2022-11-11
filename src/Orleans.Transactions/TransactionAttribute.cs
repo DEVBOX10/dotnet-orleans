@@ -68,10 +68,10 @@ namespace Orleans
 
         private ITransactionAgent TransactionAgent => _transactionAgent ?? throw new OrleansTransactionsDisabledException();
 
-        [Id(1)]
+        [Id(0)]
         public TransactionOption TransactionOption { get; set; }
 
-        [Id(2)]
+        [Id(1)]
         public TransactionInfo TransactionInfo { get; set; }
 
         [GeneratedActivatorConstructor]
@@ -311,15 +311,14 @@ namespace Orleans
         public override T GetResult<T>() => _response.GetResult<T>();
     }
 
-    [GenerateSerializer]
+    [SerializerTransparent]
     public abstract class TransactionRequest : TransactionRequestBase 
     {
-        [GeneratedActivatorConstructor]
         protected TransactionRequest(Serializer<OrleansTransactionAbortedException> exceptionSerializer, IServiceProvider serviceProvider) : base(exceptionSerializer, serviceProvider)
         {
         }
 
-        protected override ValueTask<Response> BaseInvoke()
+        protected sealed override ValueTask<Response> BaseInvoke()
         {
             try
             {
@@ -355,15 +354,14 @@ namespace Orleans
         protected abstract ValueTask InvokeInner();
     }
 
-    [GenerateSerializer]
+    [SerializerTransparent]
     public abstract class TransactionRequest<TResult> : TransactionRequestBase
     {
-        [GeneratedActivatorConstructor]
         protected TransactionRequest(Serializer<OrleansTransactionAbortedException> exceptionSerializer, IServiceProvider serviceProvider) : base(exceptionSerializer, serviceProvider)
         {
         }
 
-        protected override ValueTask<Response> BaseInvoke()
+        protected sealed override ValueTask<Response> BaseInvoke()
         {
             try
             {
@@ -398,15 +396,14 @@ namespace Orleans
         protected abstract ValueTask<TResult> InvokeInner();
     }
 
-    [GenerateSerializer]
+    [SerializerTransparent]
     public abstract class TransactionTaskRequest<TResult> : TransactionRequestBase
     {
-        [GeneratedActivatorConstructor]
         protected TransactionTaskRequest(Serializer<OrleansTransactionAbortedException> exceptionSerializer, IServiceProvider serviceProvider) : base(exceptionSerializer, serviceProvider)
         {
         }
 
-        protected override ValueTask<Response> BaseInvoke()
+        protected sealed override ValueTask<Response> BaseInvoke()
         {
             try
             {
@@ -442,15 +439,14 @@ namespace Orleans
         protected abstract Task<TResult> InvokeInner();
     }
 
-    [GenerateSerializer]
+    [SerializerTransparent]
     public abstract class TransactionTaskRequest : TransactionRequestBase
     {
-        [GeneratedActivatorConstructor]
         protected TransactionTaskRequest(Serializer<OrleansTransactionAbortedException> exceptionSerializer, IServiceProvider serviceProvider) : base(exceptionSerializer, serviceProvider)
         {
         }
 
-        protected override ValueTask<Response> BaseInvoke()
+        protected sealed override ValueTask<Response> BaseInvoke()
         {
             try
             {

@@ -1,7 +1,6 @@
 using System;
 using System.Buffers.Text;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
 using Orleans.Runtime;
@@ -12,10 +11,7 @@ namespace Orleans.BroadcastChannel
     /// <summary>
     /// Identifies a Channel within a provider
     /// </summary>
-    [Immutable]
-    [Serializable]
-    [StructLayout(LayoutKind.Auto)]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     public readonly struct ChannelId : IEquatable<ChannelId>, IComparable<ChannelId>, ISerializable, ISpanFormattable
     {
         [Id(0)]
@@ -53,7 +49,7 @@ namespace Orleans.BroadcastChannel
         }
 
         internal ChannelId(byte[] fullKey, ushort keyIndex)
-            : this(fullKey, keyIndex, (int)JenkinsHash.ComputeHash(fullKey))
+            : this(fullKey, keyIndex, (int)StableHash.ComputeHash(fullKey))
         {
         }
 
@@ -213,17 +209,14 @@ namespace Orleans.BroadcastChannel
         internal IdSpan GetKeyIdSpan() => keyIndex == 0 ? IdSpan.UnsafeCreate(fullKey, hash) : new(fullKey.AsSpan(keyIndex).ToArray());
     }
 
-    [Immutable]
-    [Serializable]
-    [StructLayout(LayoutKind.Auto)]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     internal readonly struct InternalChannelId : IEquatable<InternalChannelId>, IComparable<InternalChannelId>, ISerializable, ISpanFormattable
     {
         [Id(0)]
-        public ChannelId ChannelId { get; }
+        public readonly ChannelId ChannelId;
 
         [Id(1)]
-        public string ProviderName { get; }
+        public readonly string ProviderName;
 
         public InternalChannelId(string providerName, ChannelId streamId)
         {

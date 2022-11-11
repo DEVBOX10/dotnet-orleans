@@ -5,12 +5,30 @@ using System.Threading.Tasks;
 
 namespace Orleans.Serialization.Invocation
 {
-    public abstract class UnitTestRequest : IInvokable
+    [GenerateSerializer]
+    public abstract class UnitTestRequestBase : IInvokable
     {
-        public abstract int ArgumentCount { get; }
+        public virtual int GetArgumentCount() => 0;
+        public abstract ValueTask<Response> Invoke();
+        public abstract object GetTarget();
+        public abstract void SetTarget(ITargetHolder holder);
+        public virtual object GetArgument(int index) => throw new ArgumentOutOfRangeException(message: "The request has zero arguments", null);
+        public virtual void SetArgument(int index, object value) => throw new ArgumentOutOfRangeException(message: "The request has zero arguments", null);
+        public abstract void Dispose();
+        public abstract string GetMethodName();
+        public abstract string GetInterfaceName();
 
+        public abstract string GetActivityName();
+        public abstract Type GetInterfaceType();
+
+        public abstract MethodInfo GetMethod();
+    }
+
+    [GenerateSerializer]
+    public abstract class UnitTestRequest : UnitTestRequestBase
+    {
         [DebuggerHidden]
-        public ValueTask<Response> Invoke()
+        public sealed override ValueTask<Response> Invoke()
         {
             try
             {
@@ -46,27 +64,13 @@ namespace Orleans.Serialization.Invocation
         // Generated
         [DebuggerHidden]
         protected abstract ValueTask InvokeInner();
-        public abstract TTarget GetTarget<TTarget>();
-        public abstract void SetTarget<TTargetHolder>(TTargetHolder holder) where TTargetHolder : ITargetHolder;
-        public abstract TArgument GetArgument<TArgument>(int index);
-        public abstract void SetArgument<TArgument>(int index, in TArgument value);
-        public abstract void Dispose();
-        public abstract string MethodName { get; }
-        public abstract Type[] MethodTypeArguments { get; }
-        public abstract string InterfaceName { get; }
-        public abstract string ActivityName { get; }
-        public abstract Type InterfaceType { get; }
-        public abstract Type[] InterfaceTypeArguments { get; }
-        public abstract Type[] ParameterTypes { get; }
-        public abstract MethodInfo Method { get; }
     }
 
-    public abstract class UnitTestRequest<TResult> : IInvokable
+    [GenerateSerializer]
+    public abstract class UnitTestRequest<TResult> : UnitTestRequestBase
     {
-        public abstract int ArgumentCount { get; }
-
         [DebuggerHidden]
-        public ValueTask<Response> Invoke()
+        public sealed override ValueTask<Response> Invoke()
         {
             try
             {
@@ -101,27 +105,13 @@ namespace Orleans.Serialization.Invocation
         // Generated
         [DebuggerHidden]
         protected abstract ValueTask<TResult> InvokeInner();
-        public abstract TTarget GetTarget<TTarget>();
-        public abstract void SetTarget<TTargetHolder>(TTargetHolder holder) where TTargetHolder : ITargetHolder;
-        public abstract TArgument GetArgument<TArgument>(int index);
-        public abstract void SetArgument<TArgument>(int index, in TArgument value);
-        public abstract void Dispose();
-        public abstract string MethodName { get; }
-        public abstract Type[] MethodTypeArguments { get; }
-        public abstract string InterfaceName { get; }
-        public abstract string ActivityName { get; }
-        public abstract Type InterfaceType { get; }
-        public abstract Type[] InterfaceTypeArguments { get; }
-        public abstract Type[] ParameterTypes { get; }
-        public abstract MethodInfo Method { get; }
     }
 
-    public abstract class UnitTestTaskRequest<TResult> : IInvokable
+    [GenerateSerializer]
+    public abstract class UnitTestTaskRequest<TResult> : UnitTestRequestBase
     {
-        public abstract int ArgumentCount { get; }
-
         [DebuggerHidden]
-        public ValueTask<Response> Invoke()
+        public sealed override ValueTask<Response> Invoke()
         {
             try
             {
@@ -157,27 +147,13 @@ namespace Orleans.Serialization.Invocation
         // Generated
         [DebuggerHidden]
         protected abstract Task<TResult> InvokeInner();
-        public abstract TTarget GetTarget<TTarget>();
-        public abstract void SetTarget<TTargetHolder>(TTargetHolder holder) where TTargetHolder : ITargetHolder;
-        public abstract TArgument GetArgument<TArgument>(int index);
-        public abstract void SetArgument<TArgument>(int index, in TArgument value);
-        public abstract void Dispose();
-        public abstract string MethodName { get; }
-        public abstract Type[] MethodTypeArguments { get; }
-        public abstract string InterfaceName { get; }
-        public abstract string ActivityName { get; }
-        public abstract Type InterfaceType { get; }
-        public abstract Type[] InterfaceTypeArguments { get; }
-        public abstract Type[] ParameterTypes { get; }
-        public abstract MethodInfo Method { get; }
     }
 
-    public abstract class UnitTestTaskRequest : IInvokable
+    [GenerateSerializer]
+    public abstract class UnitTestTaskRequest : UnitTestRequestBase
     {
-        public abstract int ArgumentCount { get; }
-
         [DebuggerHidden]
-        public ValueTask<Response> Invoke()
+        public sealed override ValueTask<Response> Invoke()
         {
             try
             {
@@ -214,27 +190,13 @@ namespace Orleans.Serialization.Invocation
         // Generated
         [DebuggerHidden]
         protected abstract Task InvokeInner();
-        public abstract TTarget GetTarget<TTarget>();
-        public abstract void SetTarget<TTargetHolder>(TTargetHolder holder) where TTargetHolder : ITargetHolder;
-        public abstract TArgument GetArgument<TArgument>(int index);
-        public abstract void SetArgument<TArgument>(int index, in TArgument value);
-        public abstract void Dispose();
-        public abstract string MethodName { get; }
-        public abstract Type[] MethodTypeArguments { get; }
-        public abstract string InterfaceName { get; }
-        public abstract string ActivityName { get; }
-        public abstract Type InterfaceType { get; }
-        public abstract Type[] InterfaceTypeArguments { get; }
-        public abstract Type[] ParameterTypes { get; }
-        public abstract MethodInfo Method { get; }
     }
 
-    public abstract class UnitTestVoidRequest : IInvokable
+    [GenerateSerializer]
+    public abstract class UnitTestVoidRequest : UnitTestRequestBase
     {
-        public abstract int ArgumentCount { get; }
-
         [DebuggerHidden]
-        public ValueTask<Response> Invoke()
+        public sealed override ValueTask<Response> Invoke()
         {
             try
             {
@@ -250,18 +212,5 @@ namespace Orleans.Serialization.Invocation
         // Generated
         [DebuggerHidden]
         protected abstract void InvokeInner();
-        public abstract TTarget GetTarget<TTarget>();
-        public abstract void SetTarget<TTargetHolder>(TTargetHolder holder) where TTargetHolder : ITargetHolder;
-        public abstract TArgument GetArgument<TArgument>(int index);
-        public abstract void SetArgument<TArgument>(int index, in TArgument value);
-        public abstract void Dispose();
-        public abstract string MethodName { get; }
-        public abstract Type[] MethodTypeArguments { get; }
-        public abstract string InterfaceName { get; }
-        public abstract string ActivityName { get; }
-        public abstract Type InterfaceType { get; }
-        public abstract Type[] InterfaceTypeArguments { get; }
-        public abstract Type[] ParameterTypes { get; }
-        public abstract MethodInfo Method { get; }
     }
 }

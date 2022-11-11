@@ -40,7 +40,7 @@ namespace DefaultCluster.Tests.General
             // It's probably because the way hash codes are generated for the GrainReference
             // have changed. If you are sure the new code is repeatable, then it's fine to
             // update the expected value here. Good luck, friend.
-            Assert.Equal(3068696999u, r.GetUniformHashCode());
+            Assert.Equal(3643965955u, r.GetUniformHashCode());
         }
 
         [Fact]
@@ -110,7 +110,7 @@ namespace DefaultCluster.Tests.General
         [Fact, TestCategory("Serialization"), TestCategory("JSON")]
         public async Task GrainReference_Json_Serialization_Nested()
         {
-            var settings = OrleansJsonSerializer.GetDefaultSerializerSettings(this.HostedCluster.Client.ServiceProvider);
+            var settings = OrleansJsonSerializerSettings.GetDefaultSerializerSettings(this.HostedCluster.Client.ServiceProvider);
 
             var grain = HostedCluster.GrainFactory.GetGrain<ISimpleGrain>(GetRandomGrainId());
             await grain.SetA(56820);
@@ -186,7 +186,7 @@ namespace DefaultCluster.Tests.General
 
         private T NewtonsoftJsonSerializeRoundtrip<T>(T obj)
         {
-            var settings = OrleansJsonSerializer.GetDefaultSerializerSettings(this.HostedCluster.Client.ServiceProvider);
+            var settings = OrleansJsonSerializerSettings.GetDefaultSerializerSettings(this.HostedCluster.Client.ServiceProvider);
             // http://james.newtonking.com/json/help/index.html?topic=html/T_Newtonsoft_Json_JsonConvert.htm
             string json = JsonConvert.SerializeObject(obj, settings);
             object other = JsonConvert.DeserializeObject(json, typeof(T), settings);

@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
 
@@ -9,10 +8,7 @@ namespace Orleans.Runtime
     /// <summary>
     /// Primitive type for identities, representing a sequence of bytes.
     /// </summary>
-    [Immutable]
-    [Serializable]
-    [StructLayout(LayoutKind.Auto)]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     public readonly struct IdSpan : IEquatable<IdSpan>, IComparable<IdSpan>, ISerializable, ISpanFormattable
     {
         /// <summary>
@@ -36,7 +32,7 @@ namespace Orleans.Runtime
         public IdSpan(byte[] value)
         {
             _value = value;
-            _hashCode = (int)JenkinsHash.ComputeHash(value);
+            _hashCode = (int)StableHash.ComputeHash(value);
         }
 
         /// <summary>

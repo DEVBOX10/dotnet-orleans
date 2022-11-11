@@ -2,14 +2,12 @@ using System;
 using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
 
 namespace Orleans.Runtime
 {
-    [Serializable, Immutable]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     public sealed class LegacyGrainId : IEquatable<LegacyGrainId>, IComparable<LegacyGrainId>
     {
         private static readonly Interner<UniqueKey, LegacyGrainId> grainIdInternCache = new Interner<UniqueKey, LegacyGrainId>(InternerConstants.SIZE_LARGE);
@@ -19,7 +17,7 @@ namespace Orleans.Runtime
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2104:DoNotDeclareReadOnlyMutableReferenceTypes")]
         [DataMember]
-        [Id(1)]
+        [Id(0)]
         internal readonly UniqueKey Key;
 
         public UniqueKey.Category Category => Key.IdCategory;
@@ -244,7 +242,6 @@ namespace Orleans.Runtime
             return FindOrCreateGrainId(UniqueKey.NewKey(n0, n1, typeCodeData, keyExt));
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static LegacyGrainId ThrowNotLegacyGrainId(GrainId id)
         {
             throw new InvalidOperationException($"Cannot convert non-legacy id {id} into legacy id");

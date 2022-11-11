@@ -142,33 +142,33 @@ namespace Orleans
         /// Gets or sets the grain ID of the grain that created the reminder. Forms the reminder
         /// primary key together with <see cref="ReminderName"/>.
         /// </summary>
-        [Id(1)]
+        [Id(0)]
         public GrainId GrainId { get; set; }
 
         /// <summary>
         /// Gets or sets the name of the reminder. Forms the reminder primary key together with 
         /// <see cref="GrainId"/>.
         /// </summary>
-        [Id(2)]
+        [Id(1)]
         public string ReminderName { get; set; }
 
         /// <summary>
         /// Gets or sets the time when the reminder was supposed to tick in the first time
         /// </summary>
-        [Id(3)]
+        [Id(2)]
         public DateTime StartAt { get; set; }
 
         /// <summary>
         /// Gets or sets the time period for the reminder
         /// </summary>
-        [Id(4)]
+        [Id(3)]
         public TimeSpan Period { get; set; }
 
         /// <summary>
         /// Gets or sets the ETag.
         /// </summary>
         /// <value>The ETag.</value>
-        [Id(5)]
+        [Id(4)]
         public string ETag { get; set; }
 
         /// <inheritdoc/>
@@ -181,16 +181,15 @@ namespace Orleans
         internal IGrainReminder ToIGrainReminder() => new ReminderData(GrainId, ReminderName, ETag);
     }
 
-    [Serializable]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     internal sealed class ReminderData : IGrainReminder
     {
+        [Id(0)]
+        public readonly GrainId GrainId;
         [Id(1)]
-        public GrainId GrainId { get; private set; }
+        public string ReminderName { get; }
         [Id(2)]
-        public string ReminderName { get; private set; }
-        [Id(3)]
-        public string ETag { get; private set; }
+        public readonly string ETag;
 
         internal ReminderData(GrainId grainId, string reminderName, string eTag)
         {

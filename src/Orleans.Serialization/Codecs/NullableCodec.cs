@@ -1,9 +1,10 @@
+using System;
+using System.Buffers;
+using System.Runtime.CompilerServices;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.GeneratedCodeHelpers;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Codecs
 {
@@ -14,7 +15,7 @@ namespace Orleans.Serialization.Codecs
     [RegisterSerializer]
     public sealed class NullableCodec<T> : IFieldCodec<T?> where T : struct
     {
-        public static readonly Type CodecFieldType = typeof(T);
+        private readonly Type CodecFieldType = typeof(T);
         private readonly IFieldCodec<T> _fieldCodec;
 
         /// <summary>
@@ -27,41 +28,38 @@ namespace Orleans.Serialization.Codecs
         }
 
         /// <inheritdoc/>
-        void IFieldCodec<T?>.WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, T? value)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, T? value) where TBufferWriter : IBufferWriter<byte>
         {
             // If the value is null, write it as the null reference.
-            if (!value.HasValue && ReferenceCodec.TryWriteReferenceField(ref writer, fieldIdDelta, expectedType, null))
+            if (value is null)
             {
+                ReferenceCodec.WriteNullReference(ref writer, fieldIdDelta);
                 return;
             }
 
             // The value is not null.
-            _fieldCodec.WriteField(ref writer, fieldIdDelta, CodecFieldType, value.Value);
+            _fieldCodec.WriteField(ref writer, fieldIdDelta, CodecFieldType, value.GetValueOrDefault());
         }
 
         /// <inheritdoc/>
-        T? IFieldCodec<T?>.ReadValue<TInput>(ref Reader<TInput> reader, Field field)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public T? ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
             // This will only be true if the value is null.
             if (field.WireType == WireType.Reference)
             {
-                return ReferenceCodec.ReadReference<T?, TInput>(ref reader, field);
+                ReferenceCodec.MarkValueField(reader.Session);
+                var reference = reader.ReadVarUInt32();
+                if (reference != 0) ThrowInvalidReference(reference);
+                return null;
             }
 
             // Read the non-null value.
             return _fieldCodec.ReadValue(ref reader, field);
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowUnsupportedWireTypeException(Field field) => throw new UnsupportedWireTypeException(
-            $"Only a {nameof(WireType)} value of {WireType.TagDelimited} is supported for string fields. {field}");
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowIndexOutOfRangeException(int length) => throw new IndexOutOfRangeException(
-            $"Encountered too many elements in array of type {typeof(T?)} with declared length {length}.");
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowLengthFieldMissing() => throw new RequiredFieldMissingException("Serialized array is missing its length field.");
+        private static void ThrowInvalidReference(uint reference) => throw new ReferenceNotFoundException(typeof(T?), reference);
     }
 
     /// <summary>
@@ -69,7 +67,7 @@ namespace Orleans.Serialization.Codecs
     /// </summary>
     /// <typeparam name="T">The element type.</typeparam>
     [RegisterCopier]
-    public sealed class NullableCopier<T> : IDeepCopier<T?> where T : struct
+    public sealed class NullableCopier<T> : IDeepCopier<T?>, IOptionalDeepCopier where T : struct
     {
         private readonly IDeepCopier<T> _copier;
 
@@ -77,20 +75,13 @@ namespace Orleans.Serialization.Codecs
         /// Initializes a new instance of the <see cref="NullableCopier{T}"/> class.
         /// </summary>
         /// <param name="copier">The copier.</param>
-        public NullableCopier(IDeepCopier<T> copier)
-        {
-            _copier = copier;
-        }
+        public NullableCopier(IDeepCopier<T> copier) => _copier = OrleansGeneratedCodeHelper.GetOptionalCopier(copier);
+
+        public bool IsShallowCopyable() => _copier is null;
+
+        object IDeepCopier.DeepCopy(object input, CopyContext context) => input is null || _copier is null ? input : _copier.DeepCopy(input, context);
 
         /// <inheritdoc/>
-        public T? DeepCopy(T? input, CopyContext context)
-        {
-            if (!input.HasValue)
-            {
-                return input;
-            }
-
-            return new T?(_copier.DeepCopy(input.Value, context));
-        }
+        public T? DeepCopy(T? input, CopyContext context) => input is null || _copier is null ? input : _copier.DeepCopy(input.GetValueOrDefault(), context);
     }
 }

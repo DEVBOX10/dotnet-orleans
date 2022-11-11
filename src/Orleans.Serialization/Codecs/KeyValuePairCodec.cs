@@ -1,10 +1,10 @@
+using System;
+using System.Buffers;
+using System.Collections.Generic;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.GeneratedCodeHelpers;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Codecs
 {
@@ -18,8 +18,8 @@ namespace Orleans.Serialization.Codecs
     {
         private readonly IFieldCodec<TKey> _keyCodec;
         private readonly IFieldCodec<TValue> _valueCodec;
-        private static readonly Type CodecKeyType = typeof(TKey);
-        private static readonly Type CodecValueType = typeof(TValue);
+        private readonly Type CodecKeyType = typeof(TKey);
+        private readonly Type CodecValueType = typeof(TValue);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KeyValuePairCodec{TKey, TValue}"/> class.
@@ -33,10 +33,10 @@ namespace Orleans.Serialization.Codecs
         }
 
         /// <inheritdoc/>
-        void IFieldCodec<KeyValuePair<TKey, TValue>>.WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer,
+        public void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer,
             uint fieldIdDelta,
             Type expectedType,
-            KeyValuePair<TKey, TValue> value)
+            KeyValuePair<TKey, TValue> value) where TBufferWriter : IBufferWriter<byte>
         {
             ReferenceCodec.MarkValueField(writer.Session);
             writer.WriteFieldHeader(fieldIdDelta, expectedType, value.GetType(), WireType.TagDelimited);
@@ -50,11 +50,7 @@ namespace Orleans.Serialization.Codecs
         /// <inheritdoc/>
         public KeyValuePair<TKey, TValue> ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
-            if (field.WireType != WireType.TagDelimited)
-            {
-                ThrowUnsupportedWireTypeException(field);
-            }
-
+            field.EnsureWireTypeTagDelimited();
             ReferenceCodec.MarkValueField(reader.Session);
             var key = default(TKey);
             var value = default(TValue);
@@ -84,10 +80,6 @@ namespace Orleans.Serialization.Codecs
 
             return new KeyValuePair<TKey, TValue>(key, value);
         }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowUnsupportedWireTypeException(Field field) => throw new UnsupportedWireTypeException(
-            $"Only a {nameof(WireType)} value of {WireType.TagDelimited} is supported. {field}");
     }
 
     /// <summary>
@@ -96,7 +88,7 @@ namespace Orleans.Serialization.Codecs
     /// <typeparam name="TKey">The key type.</typeparam>
     /// <typeparam name="TValue">The value type.</typeparam>
     [RegisterCopier]
-    public sealed class KeyValuePairCopier<TKey, TValue> : IDeepCopier<KeyValuePair<TKey, TValue>>
+    public sealed class KeyValuePairCopier<TKey, TValue> : IDeepCopier<KeyValuePair<TKey, TValue>>, IOptionalDeepCopier
     {
         private readonly IDeepCopier<TKey> _keyCopier;
         private readonly IDeepCopier<TValue> _valueCopier;
@@ -108,11 +100,19 @@ namespace Orleans.Serialization.Codecs
         /// <param name="valueCopier">The value copier.</param>
         public KeyValuePairCopier(IDeepCopier<TKey> keyCopier, IDeepCopier<TValue> valueCopier)
         {
-            _keyCopier = keyCopier;
-            _valueCopier = valueCopier;
+            _keyCopier = OrleansGeneratedCodeHelper.GetOptionalCopier(keyCopier);
+            _valueCopier = OrleansGeneratedCodeHelper.GetOptionalCopier(valueCopier);
         }
 
+        public bool IsShallowCopyable() => _keyCopier is null && _valueCopier is null;
+
+        object IDeepCopier.DeepCopy(object input, CopyContext context) => IsShallowCopyable() ? input : DeepCopy((KeyValuePair<TKey, TValue>)input, context);
+
         /// <inheritdoc/>
-        public KeyValuePair<TKey, TValue> DeepCopy(KeyValuePair<TKey, TValue> input, CopyContext context) => new(_keyCopier.DeepCopy(input.Key, context), _valueCopier.DeepCopy(input.Value, context));
+        public KeyValuePair<TKey, TValue> DeepCopy(KeyValuePair<TKey, TValue> input, CopyContext context)
+        {
+            return new(_keyCopier is null ? input.Key : _keyCopier.DeepCopy(input.Key, context),
+                _valueCopier is null ? input.Value : _valueCopier.DeepCopy(input.Value, context));
+        }
     }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 
 #nullable enable
@@ -7,39 +6,38 @@ namespace Orleans.Runtime
 {
     [Immutable]
     [Serializable]
-    [StructLayout(LayoutKind.Auto)]
     [GenerateSerializer]
-    internal readonly struct InternalStreamId : IEquatable<InternalStreamId>, IComparable<InternalStreamId>, ISerializable, ISpanFormattable
+    public readonly struct QualifiedStreamId : IEquatable<QualifiedStreamId>, IComparable<QualifiedStreamId>, ISerializable, ISpanFormattable
     {
         [Id(0)]
-        public StreamId StreamId { get; }
+        public readonly StreamId StreamId;
 
         [Id(1)]
-        public string ProviderName { get; }
+        public readonly string ProviderName;
 
-        public InternalStreamId(string providerName, StreamId streamId)
+        public QualifiedStreamId(string providerName, StreamId streamId)
         {
             ProviderName = providerName;
             StreamId = streamId;
         }
 
-        private InternalStreamId(SerializationInfo info, StreamingContext context)
+        private QualifiedStreamId(SerializationInfo info, StreamingContext context)
         {
             ProviderName = info.GetString("pvn")!;
             StreamId = (StreamId)info.GetValue("sid", typeof(StreamId))!;
         }
 
-        public static implicit operator StreamId(InternalStreamId internalStreamId) => internalStreamId.StreamId;
+        public static implicit operator StreamId(QualifiedStreamId internalStreamId) => internalStreamId.StreamId;
 
-        public bool Equals(InternalStreamId other) => StreamId.Equals(other) && ProviderName.Equals(other.ProviderName);
+        public bool Equals(QualifiedStreamId other) => StreamId.Equals(other) && ProviderName.Equals(other.ProviderName);
 
-        public override bool Equals(object? obj) => obj is InternalStreamId other ? this.Equals(other) : false;
+        public override bool Equals(object? obj) => obj is QualifiedStreamId other ? this.Equals(other) : false;
 
-        public static bool operator ==(InternalStreamId s1, InternalStreamId s2) => s1.Equals(s2);
+        public static bool operator ==(QualifiedStreamId s1, QualifiedStreamId s2) => s1.Equals(s2);
 
-        public static bool operator !=(InternalStreamId s1, InternalStreamId s2) => !s2.Equals(s1);
+        public static bool operator !=(QualifiedStreamId s1, QualifiedStreamId s2) => !s2.Equals(s1);
 
-        public int CompareTo(InternalStreamId other) => StreamId.CompareTo(other.StreamId);
+        public int CompareTo(QualifiedStreamId other) => StreamId.CompareTo(other.StreamId);
 
         public void GetObjectData(SerializationInfo info, StreamingContext context)
         {

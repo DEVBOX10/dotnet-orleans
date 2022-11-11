@@ -5,8 +5,7 @@ namespace Orleans.Metadata
     /// <summary>
     /// Represents a version with two components, a major (most-significant) component, and a minor (least-significant) component.
     /// </summary>
-    [Serializable, Immutable]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     public readonly struct MajorMinorVersion : IComparable<MajorMinorVersion>, IEquatable<MajorMinorVersion>
     {
         /// <summary>
@@ -28,13 +27,13 @@ namespace Orleans.Metadata
         /// <summary>
         /// Gets the most significant version component.
         /// </summary>
-        [Id(1)]
+        [Id(0)]
         public long Major { get; }
 
         /// <summary>
         /// Gets the least significant version component.
         /// </summary>
-        [Id(2)]
+        [Id(1)]
         public long Minor { get; }
 
         /// <inheritdoc />

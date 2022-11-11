@@ -65,7 +65,7 @@ namespace Orleans.Serialization.Buffers
         /// Fills the destination span with data from the input.
         /// </summary>
         /// <param name="destination">The destination.</param>
-        public abstract void ReadBytes(in Span<byte> destination);
+        public abstract void ReadBytes(Span<byte> destination);
 
         /// <summary>
         /// Reads bytes from the input into the destination array.
@@ -113,7 +113,7 @@ namespace Orleans.Serialization.Buffers
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public override void ReadBytes(in Span<byte> destination)
+        public override void ReadBytes(Span<byte> destination)
         {
 #if NETCOREAPP3_1_OR_GREATER
             var count = _stream.Read(destination);
@@ -196,7 +196,6 @@ namespace Orleans.Serialization.Buffers
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowInsufficientData() => throw new InvalidOperationException("Insufficient data present in buffer.");
 
         private static byte[] GetScratchBuffer() => Scratch ??= new byte[1024];
@@ -476,7 +475,6 @@ namespace Orleans.Serialization.Buffers
                 throw new NotSupportedException($"Type {typeof(TInput)} is not supported");
             }
             
-            [MethodImpl(MethodImplOptions.NoInlining)]
             static void ThrowInvalidPosition(long expectedPosition, long actualPosition)
             {
                 throw new InvalidOperationException($"Expected to arrive at position {expectedPosition} after ForkFrom, but resulting position is {actualPosition}");
@@ -514,7 +512,6 @@ namespace Orleans.Serialization.Buffers
                 ThrowInvalidPosition(position, Position);
             }
 
-            [MethodImpl(MethodImplOptions.NoInlining)]
             static void ThrowInvalidPosition(long expectedPosition, long actualPosition)
             {
                 throw new InvalidOperationException($"Expected to arrive at position {expectedPosition} after ResumeFrom, but resulting position is {actualPosition}");
@@ -565,15 +562,15 @@ namespace Orleans.Serialization.Buffers
             if (IsReadOnlySequenceInput || IsSpanInput)
             {
                 var pos = _bufferPos;
-                var span = _currentSpan;
-                if ((uint)pos >= (uint)span.Length)
+                if ((uint)pos < (uint)_currentSpan.Length)
                 {
-                    return ReadByteSlow(ref this);
+                    // https://github.com/dotnet/runtime/issues/72004
+                    var result = Unsafe.Add(ref MemoryMarshal.GetReference(_currentSpan), (uint)pos);
+                    _bufferPos = pos + 1;
+                    return result;
                 }
 
-                var result = span[pos];
-                _bufferPos = pos + 1;
-                return result;
+                return ReadByteSlow(ref this);
             }
             else if (_input is ReaderInput readerInput)
             {
@@ -685,13 +682,12 @@ namespace Orleans.Serialization.Buffers
             }
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowInsufficientData() => throw new InvalidOperationException("Insufficient data present in buffer.");
 
         /// <summary>
         /// Reads the specified number of bytes into the provided writer.
         /// </summary>
-        public void ReadBytes<TBufferWriter>(ref TBufferWriter writer, int count) where TBufferWriter : IBufferWriter<byte>
+        public void ReadBytes<TBufferWriter>(scoped ref TBufferWriter writer, int count) where TBufferWriter : IBufferWriter<byte>
         {
             int chunkSize;
             for (var remaining = count; remaining > 0; remaining -= chunkSize)
@@ -702,7 +698,7 @@ namespace Orleans.Serialization.Buffers
                     span = span[..remaining];
                 }
 
-                ReadBytes(in span);
+                ReadBytes(span);
                 chunkSize = span.Length;
                 writer.Advance(chunkSize);
             }
@@ -729,7 +725,7 @@ namespace Orleans.Serialization.Buffers
             if (IsReadOnlySequenceInput || IsSpanInput)
             {
                 var destination = new Span<byte>(bytes);
-                ReadBytes(in destination);
+                ReadBytes(destination);
             }
             else if (_input is ReaderInput readerInput)
             {
@@ -743,7 +739,7 @@ namespace Orleans.Serialization.Buffers
         /// Fills <paramref name="destination"/> with bytes read from the input.
         /// </summary>
         /// <param name="destination">The destination.</param>
-        public void ReadBytes(in Span<byte> destination)
+        public void ReadBytes(Span<byte> destination)
         {
             if (IsReadOnlySequenceInput || IsSpanInput)
             {
@@ -754,34 +750,33 @@ namespace Orleans.Serialization.Buffers
                     return;
                 }
 
-                CopySlower(in destination, ref this);
-
-                static void CopySlower(in Span<byte> d, ref Reader<TInput> reader)
-                {
-                    var dest = d;
-                    while (true)
-                    {
-                        var writeSize = Math.Min(dest.Length, reader._currentSpan.Length - reader._bufferPos);
-                        reader._currentSpan.Slice(reader._bufferPos, writeSize).CopyTo(dest);
-                        reader._bufferPos += writeSize;
-                        dest = dest.Slice(writeSize);
-
-                        if (dest.Length == 0)
-                        {
-                            break;
-                        }
-
-                        reader.MoveNext();
-                    }
-                }
+                ReadBytesMultiSegment(destination);
             }
             else if (_input is ReaderInput readerInput)
             {
-                readerInput.ReadBytes(in destination);
+                readerInput.ReadBytes(destination);
             }
             else
             {
                 ThrowNotSupportedInput();
+            }
+        }
+
+        private void ReadBytesMultiSegment(Span<byte> dest)
+        {
+            while (true)
+            {
+                var writeSize = Math.Min(dest.Length, _currentSpan.Length - _bufferPos);
+                _currentSpan.Slice(_bufferPos, writeSize).CopyTo(dest);
+                _bufferPos += writeSize;
+                dest = dest.Slice(writeSize);
+
+                if (dest.Length == 0)
+                {
+                    break;
+                }
+
+                MoveNext();
             }
         }
 
@@ -841,22 +836,20 @@ namespace Orleans.Serialization.Buffers
                 ref byte readHead = ref Unsafe.Add(ref MemoryMarshal.GetReference(_currentSpan), pos);
 
                 ulong result = Unsafe.ReadUnaligned<ulong>(ref readHead);
-                var bytesNeeded = BitOperations.TrailingZeroCount(result) + 1;
+                var bytesNeeded = BitOperations.TrailingZeroCount((uint)result) + 1;
+                if (bytesNeeded > 5) ThrowOverflowException();
+                _bufferPos = pos + bytesNeeded;
+                result &= (1UL << (bytesNeeded * 8)) - 1;
                 result >>= bytesNeeded;
-                _bufferPos += bytesNeeded;
-
-                // Mask off invalid data
-                var fullWidthReadMask = ~((ulong)bytesNeeded - 6 + 1);
-                var mask = ((1UL << (bytesNeeded * 7)) - 1) | fullWidthReadMask;
-                result &= mask;
-
-                return (uint)result;
+                return checked((uint)result);
             }
             else
             {
                 return ReadVarUInt32Slow();
             }
         }
+
+        private static void ThrowOverflowException() => throw new OverflowException();
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private uint ReadVarUInt32Slow()
@@ -877,7 +870,7 @@ namespace Orleans.Serialization.Buffers
             }
 
             result >>= numBytes;
-            return (uint)result;
+            return checked((uint)result);
         }
 
         /// <summary>
@@ -987,13 +980,10 @@ namespace Orleans.Serialization.Buffers
             return ExceptionHelper.ThrowArgumentOutOfRange<ulong>("value");
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static T ThrowNotSupportedInput<T>() => throw new NotSupportedException($"Type {typeof(TInput)} is not supported");
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowNotSupportedInput() => throw new NotSupportedException($"Type {typeof(TInput)} is not supported");
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowInvalidSizeException(uint length) => throw new IndexOutOfRangeException(
             $"Declared length of {typeof(byte[])}, {length}, is greater than total length of input.");
     }

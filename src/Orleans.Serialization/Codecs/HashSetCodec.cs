@@ -1,12 +1,11 @@
+using System;
+using System.Buffers;
+using System.Collections.Generic;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.GeneratedCodeHelpers;
 using Orleans.Serialization.Session;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Codecs
 {
@@ -17,7 +16,7 @@ namespace Orleans.Serialization.Codecs
     [RegisterSerializer]
     public sealed class HashSetCodec<T> : IFieldCodec<HashSet<T>>
     {
-        private static readonly Type CodecElementType = typeof(T);
+        private readonly Type CodecElementType = typeof(T);
 
         private readonly IFieldCodec<T> _fieldCodec;
         private readonly IFieldCodec<IEqualityComparer<T>> _comparerCodec;
@@ -30,7 +29,7 @@ namespace Orleans.Serialization.Codecs
         public HashSetCodec(IFieldCodec<T> fieldCodec, IFieldCodec<IEqualityComparer<T>> comparerCodec)
         {
             _fieldCodec = OrleansGeneratedCodeHelper.UnwrapService(this, fieldCodec);
-            _comparerCodec = comparerCodec;
+            _comparerCodec = OrleansGeneratedCodeHelper.UnwrapService(this, comparerCodec);
         }
 
         /// <inheritdoc/>
@@ -48,13 +47,15 @@ namespace Orleans.Serialization.Codecs
                 _comparerCodec.WriteField(ref writer, 0, typeof(IEqualityComparer<T>), value.Comparer);
             }
 
-            Int32Codec.WriteField(ref writer, 1, typeof(int), value.Count);
-
-            uint innerFieldIdDelta = 1;
-            foreach (var element in value)
+            if (value.Count > 0)
             {
-                _fieldCodec.WriteField(ref writer, innerFieldIdDelta, CodecElementType, element);
-                innerFieldIdDelta = 0;
+                UInt32Codec.WriteField(ref writer, 1, UInt32Codec.CodecFieldType, (uint)value.Count);
+                uint innerFieldIdDelta = 1;
+                foreach (var element in value)
+                {
+                    _fieldCodec.WriteField(ref writer, innerFieldIdDelta, CodecElementType, element);
+                    innerFieldIdDelta = 0;
+                }
             }
 
             writer.WriteEndObject();
@@ -68,10 +69,7 @@ namespace Orleans.Serialization.Codecs
                 return ReferenceCodec.ReadReference<HashSet<T>, TInput>(ref reader, field);
             }
 
-            if (field.WireType != WireType.TagDelimited)
-            {
-                ThrowUnsupportedWireTypeException(field);
-            }
+            field.EnsureWireTypeTagDelimited();
 
             var placeholderReferenceId = ReferenceCodec.CreateRecordPlaceholder(reader.Session);
             HashSet<T> result = null;
@@ -92,15 +90,18 @@ namespace Orleans.Serialization.Codecs
                         comparer = _comparerCodec.ReadValue(ref reader, header);
                         break;
                     case 1:
-                        int length = Int32Codec.ReadValue(ref reader, header);
+                        var length = (int)UInt32Codec.ReadValue(ref reader, header);
                         if (length > 10240 && length > reader.Length)
                         {
                             ThrowInvalidSizeException(length);
                         }
 
+                        result = CreateInstance(length, comparer, reader.Session, placeholderReferenceId);
                         break;
                     case 2:
-                        result ??= CreateInstance(comparer, reader.Session, placeholderReferenceId);
+                        if (result is null)
+                            ThrowLengthFieldMissing();
+
                         result.Add(_fieldCodec.ReadValue(ref reader, header));
                         break;
                     default:
@@ -109,24 +110,21 @@ namespace Orleans.Serialization.Codecs
                 }
             }
 
-            result ??= CreateInstance(comparer, reader.Session, placeholderReferenceId);
+            result ??= CreateInstance(0, comparer, reader.Session, placeholderReferenceId);
             return result;
         }
 
-        private HashSet<T> CreateInstance(IEqualityComparer<T> comparer, SerializerSession session, uint placeholderReferenceId)
+        private HashSet<T> CreateInstance(int length, IEqualityComparer<T> comparer, SerializerSession session, uint placeholderReferenceId)
         {
-            var result = new HashSet<T>(comparer);
+            var result = new HashSet<T>(length, comparer);
             ReferenceCodec.RecordObject(session, result, placeholderReferenceId);
             return result;
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowUnsupportedWireTypeException(Field field) => throw new UnsupportedWireTypeException(
-            $"Only a {nameof(WireType)} value of {WireType.TagDelimited} is supported. {field}");
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowInvalidSizeException(int length) => throw new IndexOutOfRangeException(
             $"Declared length of {typeof(HashSet<T>)}, {length}, is greater than total length of input.");
+
+        private static void ThrowLengthFieldMissing() => throw new RequiredFieldMissingException("Serialized set is missing its length field.");
     }
 
     /// <summary>
@@ -160,7 +158,7 @@ namespace Orleans.Serialization.Codecs
                 return context.DeepCopy(input);
             }
 
-            result = new HashSet<T>(input.Comparer);
+            result = new(input.Count, input.Comparer);
             context.RecordCopy(input, result);
             foreach (var item in input)
             {

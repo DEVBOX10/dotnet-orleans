@@ -1,13 +1,14 @@
-using Orleans.Serialization.Buffers;
 using System;
 using System.Buffers;
-using System.Collections;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Hashing;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
+using Orleans.Serialization.Buffers;
 
 namespace Orleans.Serialization.TypeSystem
 {
@@ -65,9 +66,8 @@ namespace Orleans.Serialization.TypeSystem
         /// </summary>
         /// <typeparam name="TInput">The reader input type.</typeparam>
         /// <param name="reader">The reader.</param>
-        /// <param name="type">The type.</param>
-        /// <returns><see langword="true" /> if a type was successfully read, <see langword="false" /> otherwise.</returns>
-        public unsafe bool TryRead<TInput>(ref Reader<TInput> reader, [NotNullWhen(true)] out Type type)
+        /// <returns>The type if it was successfully read, <see langword="null" /> otherwise.</returns>
+        public unsafe Type TryRead<TInput>(ref Reader<TInput> reader)
         {
             var version = reader.ReadByte();
             if (version != Version1)
@@ -95,8 +95,7 @@ namespace Orleans.Serialization.TypeSystem
 
                 if (existingKey.TypeName.AsSpan().SequenceEqual(typeName))
                 {
-                    type = entry.Type;
-                    return true;
+                    return entry.Type;
                 }
 
                 // Try the next entry.
@@ -110,19 +109,16 @@ namespace Orleans.Serialization.TypeSystem
                 typeNameString = Encoding.UTF8.GetString(typeNameBytes, typeName.Length);
             }
 
-            _ = _typeConverter.TryParse(typeNameString, out type);
-            if (type is not null)
+            if (_typeConverter.TryParse(typeNameString, out var type))
             {
                 var key = new TypeKey(hashCode, typeName.ToArray());
                 while (!_typeKeyCache.TryAdd(candidateHashCode++, (key, type)))
                 {
                     // Insert the type at the first available position.
                 }
-
-                return true;
             }
 
-            return false;
+            return type;
         }
 
         /// <summary>
@@ -183,7 +179,6 @@ namespace Orleans.Serialization.TypeSystem
             return type is not null; 
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
         [DoesNotReturn]
         private static void ThrowUnsupportedVersion(byte version) => throw new NotSupportedException($"Type encoding version {version} is not supported");
 
@@ -204,8 +199,10 @@ namespace Orleans.Serialization.TypeSystem
 
             public TypeKey(byte[] key)
             {
-                HashCode = unchecked((int)JenkinsHash.ComputeHash(key));
                 TypeName = key;
+                Unsafe.SkipInit(out int hash);
+                XxHash32.TryHash(key, MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref hash, 1)), out _);
+                HashCode = BitConverter.IsLittleEndian ? hash : BinaryPrimitives.ReverseEndianness(hash);
             }
 
             public bool Equals(in TypeKey other)

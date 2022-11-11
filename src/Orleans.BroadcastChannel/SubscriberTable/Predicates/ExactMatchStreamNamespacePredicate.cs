@@ -5,13 +5,12 @@ namespace Orleans.BroadcastChannel
     /// <summary>
     /// Stream namespace predicate which matches exactly one, specified
     /// </summary>
-    [Serializable]
-    [GenerateSerializer]
-    internal class ExactMatchChannelNamespacePredicate : IChannelNamespacePredicate
+    [Serializable, GenerateSerializer, Immutable]
+    internal sealed class ExactMatchChannelNamespacePredicate : IChannelNamespacePredicate
     {
         internal const string Prefix = "namespace:";
 
-        [Id(1)]
+        [Id(0)]
         private readonly string targetStreamNamespace;
 
         /// <summary>

@@ -1,9 +1,8 @@
+using System;
+using System.Buffers;
 using Orleans.Serialization.Buffers;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.WireProtocol;
-using System;
-using System.Buffers;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Serialization.Codecs
 {
@@ -49,26 +48,8 @@ namespace Orleans.Serialization.Codecs
         public static TimeSpan ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
             ReferenceCodec.MarkValueField(reader.Session);
-            if (field.WireType != WireType.Fixed64)
-            {
-                ThrowUnsupportedWireTypeException(field);
-            }
-
+            field.EnsureWireType(WireType.Fixed64);
             return TimeSpan.FromTicks(reader.ReadInt64());
         }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowUnsupportedWireTypeException(Field field) => throw new UnsupportedWireTypeException(
-            $"Only a {nameof(WireType)} value of {WireType.Fixed64} is supported for {nameof(TimeSpan)} fields. {field}");
-    }
-
-    /// <summary>
-    /// Copier for <see cref="TimeSpan"/>.
-    /// </summary>
-    [RegisterCopier]
-    public sealed class TimeSpanCopier : IDeepCopier<TimeSpan>
-    {
-        /// <inheritdoc />
-        public TimeSpan DeepCopy(TimeSpan input, CopyContext _) => input;
     }
 }

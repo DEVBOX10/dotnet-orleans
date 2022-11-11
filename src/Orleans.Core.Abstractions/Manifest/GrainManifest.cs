@@ -7,9 +7,8 @@ namespace Orleans.Metadata
     /// <summary>
     /// Information about available grains.
     /// </summary>
-    [Serializable]
-    [GenerateSerializer]
-    public class GrainManifest
+    [Serializable, GenerateSerializer, Immutable]
+    public sealed class GrainManifest
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="GrainManifest"/> class.
@@ -31,13 +30,13 @@ namespace Orleans.Metadata
         /// <summary>
         /// Gets the interfaces available on this silo.
         /// </summary>
-        [Id(1)]
+        [Id(0)]
         public ImmutableDictionary<GrainInterfaceType, GrainInterfaceProperties> Interfaces { get; }
 
         /// <summary>
         /// Gets the grain types available on this silo.
         /// </summary>
-        [Id(2)]
+        [Id(1)]
         public ImmutableDictionary<GrainType, GrainProperties> Grains { get; }
     }
 }

@@ -9,9 +9,8 @@ namespace Orleans.Metadata
     /// <summary>
     /// Information about a communication interface.
     /// </summary>
-    [Serializable]
-    [GenerateSerializer]
-    public class GrainInterfaceProperties
+    [Serializable, GenerateSerializer, Immutable]
+    public sealed class GrainInterfaceProperties
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="GrainInterfaceProperties"/> class.
@@ -27,7 +26,7 @@ namespace Orleans.Metadata
         /// <summary>
         /// Gets the properties.
         /// </summary>
-        [Id(1)]
+        [Id(0)]
         public ImmutableDictionary<string, string> Properties { get; }
 
         /// <summary>

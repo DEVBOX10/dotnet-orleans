@@ -3,7 +3,7 @@
   <PropertyGroup>
     <PackageId>Microsoft.Orleans.Serialization</PackageId>
     <PackageDescription>Fast, flexible, and version-tolerant serializer for .NET</PackageDescription>
-    <TargetFrameworks>$(MultiTargetFrameworks)</TargetFrameworks>
+    <TargetFrameworks>$(DefaultTargetFrameworks)</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OrleansBuildTimeCodeGen>true</OrleansBuildTimeCodeGen>
     <IsOrleansFrameworkPart>false</IsOrleansFrameworkPart>
@@ -14,10 +14,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="$(MicrosoftExtensionsDependencyModelVersion)" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsOptionsVersion)" />
     <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="$(MicrosoftExtensionsObjectPoolVersion)" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' != 'net5.0' and '$(TargetFramework)' != 'net6.0'">
-    <PackageReference Include="Microsoft.DotNet.PlatformAbstractions" Version="$(MicrosoftDotNetPlatformAbstractionsVersion)" />
+    <PackageReference Include="System.IO.Hashing" Version="$(SystemIOHashingVersion)" NoWarn="NU5104" />
   </ItemGroup>
 
   <ItemGroup>

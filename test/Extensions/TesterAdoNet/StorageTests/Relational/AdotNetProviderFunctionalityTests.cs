@@ -20,7 +20,7 @@ namespace UnitTests.StorageTests.Relational
             //This way of using the hasher is like ADO.NET Storage provider would use it. This tests
             //the hasher is thread safe.
             var adonetDefaultHasher = new StorageHasherPicker(new[] { new OrleansDefaultHasher() }); ;
-            const int TestGrainHash = 1491221312;
+            const int TestGrainHash = -201809205;
             var grainType = "Grains.PersonGrain";
             Parallel.For(0, 1000000, i =>
             {
@@ -37,9 +37,8 @@ namespace UnitTests.StorageTests.Relational
             const long LongGrainId = 1001;
             var longGrainIdAsN1 = new AdoGrainKey(LongGrainId, null);
 
-            Assert.Equal(longGrainIdAsN1.N1Key, LongGrainId);
+            Assert.Equal(LongGrainId, longGrainIdAsN1.N1Key);
         }
-
 
         [TestCategory("Functional"), TestCategory("Persistence")]
         [Fact]
@@ -50,7 +49,6 @@ namespace UnitTests.StorageTests.Relational
 
             Assert.Equal(longGrainIdAsString, LongGrainId.ToString(CultureInfo.InvariantCulture));
         }
-
 
         [TestCategory("Functional"), TestCategory("Persistence")]
         [Fact]
@@ -66,9 +64,8 @@ namespace UnitTests.StorageTests.Relational
             Assert.Equal(2, grainKeys.Length);
 
             Assert.Equal(grainKeys[0], LongGrainId.ToString(CultureInfo.InvariantCulture));
-            Assert.Equal(grainKeys[1], ExtensionKey);
+            Assert.Equal(ExtensionKey, grainKeys[1]);
         }
-
 
         [TestCategory("Functional"), TestCategory("Persistence")]
         [Fact]

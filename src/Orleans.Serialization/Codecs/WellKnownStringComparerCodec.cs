@@ -1,22 +1,19 @@
-using Orleans.Serialization.Buffers;
-using Orleans.Serialization.Cloning;
-using Orleans.Serialization.Serializers;
-using Orleans.Serialization.Utilities;
-using Orleans.Serialization.WireProtocol;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Runtime.CompilerServices;
-using System.Runtime.Serialization;
+using Orleans.Serialization.Buffers;
+using Orleans.Serialization.Cloning;
+using Orleans.Serialization.Serializers;
+using Orleans.Serialization.WireProtocol;
 
 namespace Orleans.Serialization.Codecs
 {
     /// <summary>
     /// Serializer for well-known <see cref="StringComparer"/> types.
     /// </summary>
-    [WellKnownAlias("StringComparer")]
+    [Alias("StringComparer")]
     public sealed class WellKnownStringComparerCodec : IGeneralizedCodec
     {
         private static readonly Type CodecType = typeof(WellKnownStringComparerCodec);
@@ -60,6 +57,7 @@ namespace Orleans.Serialization.Codecs
         /// <inheritdoc />
         public object ReadValue<TInput>(ref Reader<TInput> reader, Field field)
         {
+            field.EnsureWireTypeTagDelimited();
             ReferenceCodec.MarkValueField(reader.Session);
             uint type = default;
             CompareOptions options = default;
@@ -80,7 +78,7 @@ namespace Orleans.Serialization.Codecs
                         type = UInt32Codec.ReadValue(ref reader, header);
                         break;
                     case 1:
-                        options = (CompareOptions)UInt64Codec.ReadValue(ref reader, header);
+                        options = (CompareOptions)UInt32Codec.ReadValue(ref reader, header);
                         break;
                     case 2:
                         lcid = Int32Codec.ReadValue(ref reader, header);
@@ -194,8 +192,8 @@ namespace Orleans.Serialization.Codecs
             ReferenceCodec.MarkValueField(writer.Session);
             writer.WriteFieldHeader(fieldIdDelta, expectedType, typeof(WellKnownStringComparerCodec), WireType.TagDelimited);
 
-            UInt32Codec.WriteField(ref writer, 0, typeof(int), type);
-            UInt64Codec.WriteField(ref writer, 1, typeof(ulong), (ulong)compareOptions);
+            UInt32Codec.WriteField(ref writer, 0, UInt32Codec.CodecFieldType, type);
+            UInt32Codec.WriteField(ref writer, 1, UInt32Codec.CodecFieldType, (uint)compareOptions);
 
             if (compareInfo is not null)
             {
@@ -239,16 +237,9 @@ namespace Orleans.Serialization.Codecs
 #endif
 
         [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowUnsupportedWireTypeException(Field field) => throw new UnsupportedWireTypeException(
-            $"Only a {nameof(WireType)} value of {WireType.LengthPrefixed} is supported for OrdinalComparer fields. {field}");
-
-        [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowNotSupported(Field field, uint value) => throw new NotSupportedException($"Values of type {field.FieldType} are not supported. Value: {value}");
 
         [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ThrowNotSupported(Type type) => throw new NotSupportedException($"Values of type {type} are not supported");
     }
 

@@ -6,8 +6,7 @@ using System.Text;
 
 namespace Orleans.Runtime
 {
-    [Serializable, Immutable]
-    [GenerateSerializer]
+    [Serializable, GenerateSerializer, Immutable]
     [SuppressReferenceTracking]
     public sealed class UniqueKey : IComparable<UniqueKey>, IEquatable<UniqueKey>
     {
@@ -26,13 +25,13 @@ namespace Orleans.Runtime
             KeyExtSystemTarget = 8,
         }
 
-        [Id(1)]
+        [Id(0)]
         public UInt64 N0 { get; private set; }
-        [Id(2)]
+        [Id(1)]
         public UInt64 N1 { get; private set; }
-        [Id(3)]
+        [Id(2)]
         public UInt64 TypeCodeData { get; private set; }
-        [Id(4)]
+        [Id(3)]
         public string KeyExt { get; private set; }
 
         [NonSerialized]
@@ -226,18 +225,18 @@ namespace Orleans.Runtime
             // ReSharper disable NonReadonlyFieldInGetHashCode
             if (uniformHashCache == 0)
             {
-                uint n;
                 if (KeyExt != null)
                 {
-                    n = JenkinsHash.ComputeHash(this.ToByteArray());
+                    uniformHashCache = StableHash.ComputeHash(this.ToByteArray());
                 }
                 else
                 {
-                    n = JenkinsHash.ComputeHash(TypeCodeData, N0, N1);
+                    Span<byte> data = stackalloc byte[24];
+                    BinaryPrimitives.WriteUInt64LittleEndian(data, TypeCodeData);
+                    BinaryPrimitives.WriteUInt64LittleEndian(data[8..], N0);
+                    BinaryPrimitives.WriteUInt64LittleEndian(data[16..], N1);
+                    uniformHashCache = StableHash.ComputeHash(data);
                 }
-                // Unchecked is required because the Jenkins hash is an unsigned 32-bit integer, 
-                // which we need to convert to a signed 32-bit integer.
-                uniformHashCache = n;
             }
             return uniformHashCache;
             // ReSharper restore NonReadonlyFieldInGetHashCode
