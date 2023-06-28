@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -6,131 +7,179 @@ using Microsoft.Extensions.Logging;
 
 namespace Orleans.Runtime
 {
+    /// <summary>
+    /// Monitors runtime and component health periodically, reporting complaints.
+    /// </summary>
     internal class Watchdog
     {
-        private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
-        private static readonly TimeSpan heartbeatPeriod = TimeSpan.FromMilliseconds(1000);
-        private readonly TimeSpan healthCheckPeriod;
-        private DateTime lastHeartbeat;
-        private DateTime lastWatchdogCheck;
-        private readonly List<IHealthCheckParticipant> participants;
-        private readonly ILogger logger;
-        private Thread thread;
+        private static readonly TimeSpan PlatformWatchdogHeartbeatPeriod = TimeSpan.FromMilliseconds(1000);
+        private readonly CancellationTokenSource _cancellation = new CancellationTokenSource();
+        private readonly TimeSpan _componentHealthCheckPeriod;
+        private readonly List<IHealthCheckParticipant> _participants;
+        private readonly ILogger _logger;
+        private ValueStopwatch _platformWatchdogStopwatch;
+        private ValueStopwatch _componentWatchdogStopwatch;
 
-        public Watchdog(TimeSpan watchdogPeriod, List<IHealthCheckParticipant> watchables, ILogger<Watchdog> logger)
+        // GC pause duration since process start.
+        private TimeSpan _cumulativeGCPauseDuration;
+
+        private DateTime _lastComponentHealthCheckTime;
+        private Thread? _platformWatchdogThread;
+        private Thread? _componentWatchdogThread;
+
+        public Watchdog(TimeSpan watchdogPeriod, List<IHealthCheckParticipant> participants, ILogger<Watchdog> logger)
         {
-            this.logger = logger;
-            healthCheckPeriod = watchdogPeriod;
-            participants = watchables;
+            _logger = logger;
+            _componentHealthCheckPeriod = watchdogPeriod;
+            _participants = participants;
         }
 
         public void Start()
         {
-            logger.LogInformation("Starting Silo Watchdog.");
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug("Starting Silo watchdog");
+            }
+
+            if (_platformWatchdogThread is not null)
+            {
+                throw new InvalidOperationException("Watchdog.Start may not be called more than once");
+            }
+
             var now = DateTime.UtcNow;
-            lastHeartbeat = now;
-            lastWatchdogCheck = now;
-            if (thread is not null) throw new InvalidOperationException("Watchdog.Start may not be called more than once");
-            this.thread = new Thread(this.Run)
+            _platformWatchdogStopwatch = ValueStopwatch.StartNew();
+            _cumulativeGCPauseDuration = GC.GetTotalPauseDuration();
+
+            _platformWatchdogThread = new Thread(RunPlatformWatchdog)
             {
                 IsBackground = true,
-                Name = "Orleans.Runtime.Watchdog",
+                Name = "Orleans.Runtime.Watchdog.Platform",
             };
-            this.thread.Start();
+            _platformWatchdogThread.Start();
+
+            _componentWatchdogStopwatch = ValueStopwatch.StartNew();
+            _lastComponentHealthCheckTime = DateTime.UtcNow;
+
+            _componentWatchdogThread = new Thread(RunComponentWatchdog)
+            {
+                IsBackground = true,
+                Name = "Orleans.Runtime.Watchdog.Component",
+            };
+            _componentWatchdogThread.Start();
         }
 
         public void Stop()
         {
-            cancellation.Cancel();
+            _cancellation.Cancel();
         }
 
-        protected void Run()
+        protected void RunPlatformWatchdog()
         {
-            while (!this.cancellation.IsCancellationRequested)
+            while (!_cancellation.IsCancellationRequested)
             {
                 try
                 {
-                    WatchdogHeartbeatTick();
-                    Thread.Sleep(heartbeatPeriod);
-                }
-                catch (ThreadAbortException)
-                {
-                    // Silo is probably shutting-down, so just ignore and exit
+                    CheckRuntimeHealth();
                 }
                 catch (Exception exc)
                 {
-                    logger.LogError((int)ErrorCode.Watchdog_InternalError, exc, "Watchdog encountered an internal error");
+                    _logger.LogError((int)ErrorCode.Watchdog_InternalError, exc, "Platform watchdog encountered an internal error");
                 }
+
+                _platformWatchdogStopwatch.Restart();
+                _cumulativeGCPauseDuration = GC.GetTotalPauseDuration();
+                Thread.Sleep(PlatformWatchdogHeartbeatPeriod);
             }
         }
 
-        private void WatchdogHeartbeatTick()
+        private void CheckRuntimeHealth()
         {
-            try
+            var pauseDurationSinceLastTick = GC.GetTotalPauseDuration() - _cumulativeGCPauseDuration;
+            var timeSinceLastTick = _platformWatchdogStopwatch.Elapsed;
+            if (timeSinceLastTick > PlatformWatchdogHeartbeatPeriod.Multiply(2))
             {
-                CheckYourOwnHealth(lastHeartbeat, logger);
-            }
-            finally
-            {
-                lastHeartbeat = DateTime.UtcNow;
+                var gc = new[] { GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2) };
+                _logger.LogWarning(
+                    (int)ErrorCode.SiloHeartbeatTimerStalled,
+                    ".NET Runtime Platform stalled for {TimeSinceLastTick}. Total GC Pause duration during that period: {pauseDurationSinceLastTick}. We are now using a total of {TotalMemory}MB memory. Collection counts per generation: 0: {GCGen0Count}, 1: {GCGen1Count}, 2: {GCGen2Count}",
+                    timeSinceLastTick,
+                    pauseDurationSinceLastTick,
+                    GC.GetTotalMemory(false) / (1024 * 1024),
+                    gc[0],
+                    gc[1],
+                    gc[2]);
             }
 
-            var timeSinceLastWatchdogCheck = (DateTime.UtcNow - lastWatchdogCheck);
-            if (timeSinceLastWatchdogCheck <= healthCheckPeriod) return;
+            var timeSinceLastParticipantCheck = _componentWatchdogStopwatch.Elapsed;
+            if (timeSinceLastParticipantCheck > _componentHealthCheckPeriod.Multiply(2))
+            {
+                _logger.LogWarning(
+                    (int)ErrorCode.SiloHeartbeatTimerStalled,
+                    "Participant check thread has not completed for {TimeSinceLastTick}, potentially indicating lock contention or deadlock, CPU starvation, or another execution anomaly.",
+                    timeSinceLastParticipantCheck);
+            }
+        }
 
-            WatchdogInstruments.HealthChecks.Add(1);
-            int numFailedChecks = 0;
-            StringBuilder reasons = null;
-            foreach (IHealthCheckParticipant participant in participants)
+        protected void RunComponentWatchdog()
+        {
+            while (!_cancellation.IsCancellationRequested)
             {
                 try
                 {
-                    bool ok = participant.CheckHealth(lastWatchdogCheck, out var reason);
+                    CheckComponentHealth();
+                }
+                catch (Exception exc)
+                {
+                    _logger.LogError((int)ErrorCode.Watchdog_InternalError, exc, "Component health check encountered an internal error");
+                }
+
+                _componentWatchdogStopwatch.Restart();
+                Thread.Sleep(_componentHealthCheckPeriod);
+            }
+        }
+
+        private void CheckComponentHealth()
+        {
+            WatchdogInstruments.HealthChecks.Add(1);
+            var numFailedChecks = 0;
+            StringBuilder? complaints = null;
+
+            // Restart the timer before the check to reduce false positives for the stall checker.
+            _componentWatchdogStopwatch.Restart();
+            foreach (var participant in _participants)
+            {
+                try
+                {
+                    var ok = participant.CheckHealth(_lastComponentHealthCheckTime, out var complaint);
                     if (!ok)
                     {
-                        reasons ??= new StringBuilder();
-                        if (reasons.Length > 0)
+                        complaints ??= new StringBuilder();
+                        if (complaints.Length > 0)
                         {
-                            reasons.Append(" ");
+                            complaints.Append(' ');
                         }
 
-                        reasons.Append($"{participant.GetType()} failed health check with reason \"{reason}\".");
-                        numFailedChecks++;
+                        complaints.Append($"{participant.GetType()} failed health check with complaint \"{complaint}\".");
+                        ++numFailedChecks;
                     }
                 }
                 catch (Exception exc)
                 {
-                    logger.LogWarning(
+                    _logger.LogWarning(
                         (int)ErrorCode.Watchdog_ParticipantThrownException,
                         exc,
                         "Health check participant {Participant} has thrown an exception from its CheckHealth method.",
                         participant.GetType());
                 }
             }
-            if (numFailedChecks > 0)
+
+            if (complaints != null)
             {
                 WatchdogInstruments.FailedHealthChecks.Add(1);
-                logger.LogWarning((int)ErrorCode.Watchdog_HealthCheckFailure, "Watchdog had {FailedChecks} health Check failure(s) out of {ParticipantCount} health Check participants: {Reasons}", numFailedChecks, participants.Count, reasons.ToString());
+                _logger.LogWarning((int)ErrorCode.Watchdog_HealthCheckFailure, "{FailedChecks} of {ParticipantCount} components reported issues. Complaints: {Complaints}", numFailedChecks, _participants.Count, complaints);
             }
-            lastWatchdogCheck = DateTime.UtcNow;
-        }
 
-        private static void CheckYourOwnHealth(DateTime lastCheckt, ILogger logger)
-        {
-            var timeSinceLastTick = (DateTime.UtcNow - lastCheckt);
-            if (timeSinceLastTick > heartbeatPeriod.Multiply(2))
-            {
-                var gc = new[] { GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2) };
-                logger.LogWarning(
-                    (int)ErrorCode.SiloHeartbeatTimerStalled,
-                    ".NET Runtime Platform stalled for {TimeSinceLastTick} - possibly GC? We are now using total of {TotalMemory}MB memory. gc={GCGen0Count}, {GCGen1Count}, {GCGen2Count}",
-                    timeSinceLastTick,
-                    GC.GetTotalMemory(false) / (1024 * 1024),
-                    gc[0],
-                    gc[1],
-                    gc[2]);
-            }
+            _lastComponentHealthCheckTime = DateTime.UtcNow;
         }
     }
 }
-

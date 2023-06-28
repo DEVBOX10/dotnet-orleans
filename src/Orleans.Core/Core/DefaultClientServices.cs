@@ -86,6 +86,7 @@ namespace Orleans
             services.TryAddFromExisting<IClusterClient, ClusterClient>();
             services.TryAddFromExisting<IInternalClusterClient, ClusterClient>();
             services.AddFromExisting<IHostedService, ClusterClient>();
+            services.AddTransient<IOptions<MessagingOptions>>(static sp => sp.GetRequiredService<IOptions<ClientMessagingOptions>>());
 
             services.AddSingleton<IConfigureOptions<GrainTypeOptions>, DefaultGrainTypeOptionsProvider>();
             services.TryAddSingleton(typeof(IKeyedServiceCollection<,>), typeof(KeyedServiceCollection<,>));
@@ -119,10 +120,11 @@ namespace Orleans
             services.AddSingleton<ISpecializableCodec, GrainReferenceCodecProvider>();
             services.AddSingleton<ISpecializableCopier, GrainReferenceCopierProvider>();
             services.AddSingleton<OnDeserializedCallbacks>();
+            services.AddSingleton<MigrationContext.SerializationHooks>();
             services.AddSingleton<IPostConfigureOptions<OrleansJsonSerializerOptions>, ConfigureOrleansJsonSerializerOptions>();
             services.AddSingleton<OrleansJsonSerializer>();
 
-            services.TryAddTransient<IMessageSerializer>(sp => ActivatorUtilities.CreateInstance<MessageSerializer>(
+            services.TryAddTransient(sp => ActivatorUtilities.CreateInstance<MessageSerializer>(
                 sp,
                 sp.GetRequiredService<IOptions<ClientMessagingOptions>>().Value));
             services.TryAddSingleton<ConnectionFactory, ClientOutboundConnectionFactory>();

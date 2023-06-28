@@ -14,6 +14,7 @@ internal static class CatalogInstruments
 
     internal static void ActiviationShutdownViaCollection() => ActivationShutdown.Add(1, new KeyValuePair<string, object>("via", "collection"));
     internal static void ActiviationShutdownViaDeactivateOnIdle() => ActivationShutdown.Add(1, new KeyValuePair<string, object>("via", "deactivateOnIdle"));
+    internal static void ActiviationShutdownViaMigration() => ActivationShutdown.Add(1, new KeyValuePair<string, object>("via", "migration"));
     internal static void ActiviationShutdownViaDeactivateStuckActivation() => ActivationShutdown.Add(1, new KeyValuePair<string, object>("via", "deactivateStuckActivation"));
 
     internal static Counter<int> NonExistentActivations = Instruments.Meter.CreateCounter<int>(InstrumentNames.CATALOG_ACTIVATION_NON_EXISTENT_ACTIVATIONS);
@@ -24,8 +25,15 @@ internal static class CatalogInstruments
     internal static readonly Counter<int> ActivationsDestroyed = Instruments.Meter.CreateCounter<int>(InstrumentNames.CATALOG_ACTIVATION_DESTROYED);
 
     internal static ObservableGauge<int> ActivationCount;
+    
     internal static void RegisterActivationCountObserve(Func<int> observeValue)
     {
         ActivationCount = Instruments.Meter.CreateObservableGauge(InstrumentNames.CATALOG_ACTIVATION_COUNT, observeValue);
+    }
+
+    internal static ObservableGauge<int> ActivationWorkingSet;
+    internal static void RegisterActivationWorkingSetObserve(Func<int> observeValue)
+    {
+        ActivationWorkingSet = Instruments.Meter.CreateObservableGauge(InstrumentNames.CATALOG_ACTIVATION_WORKING_SET, observeValue);
     }
 }

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Orleans.CodeGenerator.SyntaxGeneration;
 
 namespace Orleans.CodeGenerator
@@ -18,7 +20,7 @@ namespace Orleans.CodeGenerator
                 Compilation = compilation,
                 ApplicationPartAttribute = Type("Orleans.ApplicationPartAttribute"),
                 Action_2 = Type("System.Action`2"),
-                ITypeManifestProvider = Type("Orleans.Serialization.Configuration.ITypeManifestProvider"),
+                TypeManifestProviderBase = Type("Orleans.Serialization.Configuration.TypeManifestProviderBase"),
                 Field = Type("Orleans.Serialization.WireProtocol.Field"),
                 FieldCodec_1 = Type("Orleans.Serialization.Codecs.IFieldCodec`1"),
                 AbstractTypeSerializer = Type("Orleans.Serialization.Serializers.AbstractTypeSerializer`1"),
@@ -38,11 +40,12 @@ namespace Orleans.CodeGenerator
                 AliasAttribute = Type("Orleans.AliasAttribute"),
                 IInvokable = Type("Orleans.Serialization.Invocation.IInvokable"),
                 InvokeMethodNameAttribute = Type("Orleans.InvokeMethodNameAttribute"),
-                FormatterServices = Type("System.Runtime.Serialization.FormatterServices"),
+                RuntimeHelpers = Type("System.Runtime.CompilerServices.RuntimeHelpers"),
                 InvokableCustomInitializerAttribute = Type("Orleans.InvokableCustomInitializerAttribute"),
                 DefaultInvokableBaseTypeAttribute = Type("Orleans.DefaultInvokableBaseTypeAttribute"),
                 GenerateCodeForDeclaringAssemblyAttribute = Type("Orleans.GenerateCodeForDeclaringAssemblyAttribute"),
                 InvokableBaseTypeAttribute = Type("Orleans.InvokableBaseTypeAttribute"),
+                ReturnValueProxyAttribute = Type("Orleans.Invocation.ReturnValueProxyAttribute"),
                 RegisterSerializerAttribute = Type("Orleans.RegisterSerializerAttribute"),
                 GeneratedActivatorConstructorAttribute = Type("Orleans.GeneratedActivatorConstructorAttribute"),
                 SerializerTransparentAttribute = Type("Orleans.SerializerTransparentAttribute"),
@@ -66,17 +69,17 @@ namespace Orleans.CodeGenerator
                 Task_1 = Type("System.Threading.Tasks.Task`1"),
                 Type = Type("System.Type"),
                 Uri = Type("System.Uri"),
-                Int128 = Type("System.Int128"),
-                UInt128 = Type("System.UInt128"),
-                Half = Type("System.Half"),
-                DateOnly = Type("System.DateOnly"),
+                Int128 = TypeOrDefault("System.Int128"),
+                UInt128 = TypeOrDefault("System.UInt128"),
+                Half = TypeOrDefault("System.Half"),
+                DateOnly = TypeOrDefault("System.DateOnly"),
                 DateTimeOffset = Type("System.DateTimeOffset"),
                 BitVector32 = Type("System.Collections.Specialized.BitVector32"),
                 Guid = Type("System.Guid"),
                 CompareInfo = Type("System.Globalization.CompareInfo"),
                 CultureInfo = Type("System.Globalization.CultureInfo"),
                 Version = Type("System.Version"),
-                TimeOnly = Type("System.TimeOnly"),
+                TimeOnly = TypeOrDefault("System.TimeOnly"),
                 ICodecProvider = Type("Orleans.Serialization.Serializers.ICodecProvider"),
                 ValueSerializer = Type("Orleans.Serialization.Serializers.IValueSerializer`1"),
                 ValueTask = Type("System.Threading.Tasks.ValueTask"),
@@ -86,7 +89,7 @@ namespace Orleans.CodeGenerator
                 Writer = Type("Orleans.Serialization.Buffers.Writer`1"),
                 FSharpSourceConstructFlagsOrDefault = TypeOrDefault("Microsoft.FSharp.Core.SourceConstructFlags"),
                 FSharpCompilationMappingAttributeOrDefault = TypeOrDefault("Microsoft.FSharp.Core.CompilationMappingAttribute"),
-                StaticCodecs = new WellKnownCodecDescription[]
+                StaticCodecs = new List<WellKnownCodecDescription>
                 {
                     new(compilation.GetSpecialType(SpecialType.System_Object), Type("Orleans.Serialization.Codecs.ObjectCodec")),
                     new(compilation.GetSpecialType(SpecialType.System_Boolean), Type("Orleans.Serialization.Codecs.BoolCodec")),
@@ -107,18 +110,19 @@ namespace Orleans.CodeGenerator
                     new(compilation.GetSpecialType(SpecialType.System_DateTime), Type("Orleans.Serialization.Codecs.DateTimeCodec")),
                     new(Type("System.TimeSpan"), Type("Orleans.Serialization.Codecs.TimeSpanCodec")),
                     new(Type("System.DateTimeOffset"), Type("Orleans.Serialization.Codecs.DateTimeOffsetCodec")),
-                    new(Type("System.DateOnly"), Type("Orleans.Serialization.Codecs.DateOnlyCodec")),
-                    new(Type("System.TimeOnly"), Type("Orleans.Serialization.Codecs.TimeOnlyCodec")),
+                    new(TypeOrDefault("System.DateOnly"), TypeOrDefault("Orleans.Serialization.Codecs.DateOnlyCodec")),
+                    new(TypeOrDefault("System.TimeOnly"), TypeOrDefault("Orleans.Serialization.Codecs.TimeOnlyCodec")),
                     new(Type("System.Guid"), Type("Orleans.Serialization.Codecs.GuidCodec")),
                     new(Type("System.Type"), Type("Orleans.Serialization.Codecs.TypeSerializerCodec")),
                     new(Type("System.ReadOnlyMemory`1").Construct(compilation.GetSpecialType(SpecialType.System_Byte)), Type("Orleans.Serialization.Codecs.ReadOnlyMemoryOfByteCodec")),
                     new(Type("System.Memory`1").Construct(compilation.GetSpecialType(SpecialType.System_Byte)), Type("Orleans.Serialization.Codecs.MemoryOfByteCodec")),
                     new(Type("System.Net.IPAddress"), Type("Orleans.Serialization.Codecs.IPAddressCodec")),
                     new(Type("System.Net.IPEndPoint"), Type("Orleans.Serialization.Codecs.IPEndPointCodec")),
-                    new(Type("System.UInt128"), Type("Orleans.Serialization.Codecs.UInt128Codec")),
-                    new(Type("System.Int128"), Type("Orleans.Serialization.Codecs.Int128Codec")),
-                    new(Type("System.Half"), Type("Orleans.Serialization.Codecs.HalfCodec")),
-                },
+                    new(TypeOrDefault("System.UInt128"), TypeOrDefault("Orleans.Serialization.Codecs.UInt128Codec")),
+                    new(TypeOrDefault("System.Int128"), TypeOrDefault("Orleans.Serialization.Codecs.Int128Codec")),
+                    new(TypeOrDefault("System.Half"), TypeOrDefault("Orleans.Serialization.Codecs.HalfCodec")),
+                    new(Type("System.Uri"), Type("Orleans.Serialization.Codecs.UriCodec")),
+                }.Where(desc => desc.UnderlyingType is {} && desc.CodecType is {}).ToArray(),
                 WellKnownCodecs = new WellKnownCodecDescription[]
                 {
                     new(Type("System.Exception"), Type("Orleans.Serialization.ExceptionCodec")),
@@ -126,7 +130,6 @@ namespace Orleans.CodeGenerator
                     new(Type("System.Collections.Generic.List`1"), Type("Orleans.Serialization.Codecs.ListCodec`1")),
                     new(Type("System.Collections.Generic.HashSet`1"), Type("Orleans.Serialization.Codecs.HashSetCodec`1")),
                     new(compilation.GetSpecialType(SpecialType.System_Nullable_T), Type("Orleans.Serialization.Codecs.NullableCodec`1")),
-                    new(Type("System.Uri"), Type("Orleans.Serialization.Codecs.UriCodec")),
                 },
                 StaticCopiers = new WellKnownCopierDescription[]
                 {
@@ -177,6 +180,8 @@ namespace Orleans.CodeGenerator
                     Type("System.Collections.Immutable.ImmutableSortedSet`1"),
                     Type("System.Collections.Immutable.ImmutableStack`1"),
                 },
+
+                LanguageVersion = (compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions)?.LanguageVersion
             };
 
             INamedTypeSymbol Type(string metadataName)
@@ -198,7 +203,7 @@ namespace Orleans.CodeGenerator
         }
 
         public INamedTypeSymbol Action_2 { get; private set; }
-        public INamedTypeSymbol ITypeManifestProvider { get; private set; }
+        public INamedTypeSymbol TypeManifestProviderBase { get; private set; }
         public INamedTypeSymbol Field { get; private set; }
         public INamedTypeSymbol DeepCopier_1 { get; private set; }
         public INamedTypeSymbol ShallowCopier { get; private set; }
@@ -266,7 +271,7 @@ namespace Orleans.CodeGenerator
         private INamedTypeSymbol UInt128;
         private INamedTypeSymbol Half;
         private INamedTypeSymbol[] _regularShallowCopyableTypes;
-        private INamedTypeSymbol[] RegularShallowCopyableType => _regularShallowCopyableTypes ??= new[]
+        private INamedTypeSymbol[] RegularShallowCopyableType => _regularShallowCopyableTypes ??= new List<INamedTypeSymbol>
         {
             TimeSpan,
             DateOnly,
@@ -285,7 +290,7 @@ namespace Orleans.CodeGenerator
             UInt128,
             Int128,
             Half
-        };
+        }.Where(t => t is {}).ToArray();
 
         public INamedTypeSymbol[] ImmutableAttributes { get; private set; }
         public INamedTypeSymbol Exception { get; private set; }
@@ -293,6 +298,7 @@ namespace Orleans.CodeGenerator
         public INamedTypeSymbol InvokeMethodNameAttribute { get; private set; }
         public INamedTypeSymbol InvokableCustomInitializerAttribute { get; private set; }
         public INamedTypeSymbol InvokableBaseTypeAttribute { get; private set; }
+        public INamedTypeSymbol ReturnValueProxyAttribute { get; private set; }
         public INamedTypeSymbol DefaultInvokableBaseTypeAttribute { get; private set; }
         public INamedTypeSymbol GenerateCodeForDeclaringAssemblyAttribute { get; private set; }
         public INamedTypeSymbol SerializationCallbacksAttribute { get; private set; }
@@ -300,7 +306,9 @@ namespace Orleans.CodeGenerator
         public INamedTypeSymbol SerializerTransparentAttribute { get; private set; }
         public INamedTypeSymbol FSharpCompilationMappingAttributeOrDefault { get; private set; }
         public INamedTypeSymbol FSharpSourceConstructFlagsOrDefault { get; private set; }
-        public INamedTypeSymbol FormatterServices { get; private set; }
+        public INamedTypeSymbol RuntimeHelpers { get; private set; }
+
+        public LanguageVersion? LanguageVersion { get; private set; }
 
         private readonly ConcurrentDictionary<ITypeSymbol, bool> _shallowCopyableTypes = new(SymbolEqualityComparer.Default);
 
@@ -444,5 +452,7 @@ namespace Orleans.CodeGenerator
 
             return null;
         }
+
+        public static bool HasScopedKeyword(this LibraryTypes libraryTypes) => libraryTypes.LanguageVersion is null or >= LanguageVersion.CSharp11;
     }
 }

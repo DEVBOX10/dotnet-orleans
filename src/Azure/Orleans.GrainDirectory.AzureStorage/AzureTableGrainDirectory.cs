@@ -19,10 +19,11 @@ namespace Orleans.GrainDirectory.AzureStorage
         private readonly AzureTableDataManager<GrainDirectoryEntity> tableDataManager;
         private readonly string clusterId;
 
-        private class GrainDirectoryEntity : ITableEntity
+        internal class GrainDirectoryEntity : ITableEntity
         {
             public string SiloAddress { get; set; }
-            public string  ActivationId { get; set; }
+            public string ActivationId { get; set; }
+            public long MembershipVersion { get; set; }
             public string PartitionKey { get; set; }
             public string RowKey { get; set; }
             public DateTimeOffset? Timestamp { get; set; }
@@ -35,6 +36,7 @@ namespace Orleans.GrainDirectory.AzureStorage
                     GrainId = RowKeyToGrainId(this.RowKey),
                     SiloAddress = Runtime.SiloAddress.FromParsableString(this.SiloAddress),
                     ActivationId = Runtime.ActivationId.FromParsableString(this.ActivationId),
+                    MembershipVersion = new MembershipVersion(this.MembershipVersion)
                 };
             }
 
@@ -46,6 +48,7 @@ namespace Orleans.GrainDirectory.AzureStorage
                     RowKey = GrainIdToRowKey(address.GrainId),
                     SiloAddress = address.SiloAddress.ToParsableString(),
                     ActivationId = address.ActivationId.ToParsableString(),
+                    MembershipVersion = address.MembershipVersion.Value,
                 };
             }
 
@@ -77,10 +80,36 @@ namespace Orleans.GrainDirectory.AzureStorage
             return result.Item1.ToGrainAddress();
         }
 
-        public async Task<GrainAddress> Register(GrainAddress address)
+        public Task<GrainAddress> Register(GrainAddress address) => Register(address, null);
+
+        public async Task<GrainAddress> Register(GrainAddress address, GrainAddress previousAddress)
         {
-            var entry = GrainDirectoryEntity.FromGrainAddress(this.clusterId, address);
-            var result = await this.tableDataManager.InsertTableEntryAsync(entry);
+            (bool isSuccess, string eTag) result;
+            if (previousAddress is not null)
+            {
+                var entry = GrainDirectoryEntity.FromGrainAddress(this.clusterId, address);
+                var previousEntry = GrainDirectoryEntity.FromGrainAddress(this.clusterId, previousAddress);
+                var (storedEntry, eTag) = await tableDataManager.ReadSingleTableEntryAsync(entry.PartitionKey, entry.RowKey);
+                if (storedEntry is null)
+                {
+                    result = await this.tableDataManager.InsertTableEntryAsync(entry);
+                }
+                else if (storedEntry.ActivationId != previousEntry.ActivationId || storedEntry.SiloAddress != previousEntry.SiloAddress)
+                {
+                    return await Lookup(address.GrainId);
+                }
+                else
+                {
+                    _ = await tableDataManager.UpdateTableEntryAsync(entry, eTag);
+                    return address;
+                }
+            }
+            else
+            {
+                var entry = GrainDirectoryEntity.FromGrainAddress(this.clusterId, address);
+                result = await this.tableDataManager.InsertTableEntryAsync(entry);
+            }
+
             // Possible race condition?
             return result.isSuccess ? address : await Lookup(address.GrainId);
         }

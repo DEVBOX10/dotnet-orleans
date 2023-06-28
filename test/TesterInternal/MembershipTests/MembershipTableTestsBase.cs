@@ -41,9 +41,9 @@ namespace UnitTests.MembershipTests
         protected readonly string connectionString;
         protected ILoggerFactory loggerFactory;
         protected IOptions<SiloOptions> siloOptions;
-        protected IOptions<ClusterOptions> clusterOptions;
+        protected IOptions<ClusterOptions> _clusterOptions;
         protected const string testDatabaseName = "OrleansMembershipTest";//for relational storage
-        protected readonly IOptions<GatewayOptions> gatewayOptions;
+        protected readonly IOptions<GatewayOptions> _gatewayOptions;
 
         private static int generation;
 
@@ -59,13 +59,17 @@ namespace UnitTests.MembershipTests
 
             fixture.InitializeConnectionStringAccessor(GetConnectionString);
             this.connectionString = fixture.ConnectionString;
-            this.clusterOptions = Options.Create(new ClusterOptions { ClusterId = this.clusterId });
+            if (string.IsNullOrEmpty(this.connectionString))
+            {
+                throw new SkipException("No connection string configured");
+            }
+            this._clusterOptions = Options.Create(new ClusterOptions { ClusterId = this.clusterId });
             var adoVariant = GetAdoInvariant();
 
             membershipTable = CreateMembershipTable(logger);
             membershipTable.InitializeMembershipTable(true).WithTimeout(TimeSpan.FromMinutes(1)).Wait();
 
-            this.gatewayOptions = Options.Create(new GatewayOptions());
+            this._gatewayOptions = Options.Create(new GatewayOptions());
             gatewayListProvider = CreateGatewayListProvider(logger);
             gatewayListProvider.InitializeGatewayListProvider().WithTimeout(TimeSpan.FromMinutes(1)).Wait();
         }
@@ -108,7 +112,7 @@ namespace UnitTests.MembershipTests
             var version = data.Version;
             foreach (var membershipEntry in membershipEntries)
             {
-                Assert.True(await membershipTable.InsertRow(membershipEntry, version));
+                Assert.True(await membershipTable.InsertRow(membershipEntry, version.Next()));
                 version = (await membershipTable.ReadRow(membershipEntry.SiloAddress)).Version;
             }
 
@@ -365,16 +369,24 @@ namespace UnitTests.MembershipTests
 
             await Task.WhenAll(Enumerable.Range(1, 19).Select(async i =>
             {
-                bool done;
+                var done = false;
                 do
                 {
                     var updatedTableData = await membershipTable.ReadAll();
                     var updatedRow = updatedTableData.TryGet(data.SiloAddress);
 
-                    TableVersion tableVersion = updatedTableData.Version.Next();
-
                     await Task.Delay(10);
-                    try { done = await membershipTable.UpdateRow(updatedRow.Item1, updatedRow.Item2, tableVersion); } catch { done = false; }
+                    if (updatedRow is null) continue;
+
+                    TableVersion tableVersion = updatedTableData.Version.Next();
+                    try
+                    {
+                        done = await membershipTable.UpdateRow(updatedRow.Item1, updatedRow.Item2, tableVersion);
+                    }
+                    catch
+                    {
+                        done = false;
+                    }
                 } while (!done);
             })).WithTimeout(TimeSpan.FromSeconds(30));
 

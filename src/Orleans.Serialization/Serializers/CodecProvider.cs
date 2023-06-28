@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Serialization.Activators;
@@ -637,10 +636,19 @@ namespace Orleans.Serialization.Serializers
             {
                 copierType = surrogateCodecType;
             }
-            else if (searchType.BaseType is { } baseType && CreateCopierInstance(fieldType, baseType) is IDerivedTypeCopier baseCopier)
+            else if (searchType.BaseType is { } baseType)
             {
                 // Find copiers which generalize over all subtypes.
-                return baseCopier;
+                if (CreateCopierInstance(fieldType, baseType) is IDerivedTypeCopier baseCopier)
+                {
+                    return baseCopier;
+                }
+                else if (baseType.IsGenericType
+                    && baseType.IsConstructedGenericType
+                    && CreateCopierInstance(fieldType, baseType.GetGenericTypeDefinition()) is IDerivedTypeCopier genericBaseCopier)
+                {
+                    return genericBaseCopier;
+                }
             }
 
             return copierType != null ? (IDeepCopier)GetServiceOrCreateInstance(copierType, constructorArguments) : null;

@@ -1,12 +1,19 @@
 using System;
 using System.Net;
+using Microsoft.Extensions.Options;
 using Orleans.Serialization.Invocation;
 
 namespace Orleans.Serialization.Configuration
 {
-    internal class DefaultTypeManifestProvider : ITypeManifestProvider
+    internal class DefaultTypeManifestProvider : TypeManifestProviderBase, IPostConfigureOptions<TypeManifestOptions>
     {
-        public void Configure(TypeManifestOptions typeManifest)
+        public void PostConfigure(string name, TypeManifestOptions options)
+        {
+            // Clean up the options bookkeeping.
+            options.TypeManifestProviders.Clear();
+        }
+
+        protected override void ConfigureInner(TypeManifestOptions typeManifest)
         {
             var wellKnownTypes = typeManifest.WellKnownTypeIds;
             wellKnownTypes[0] = typeof(void); // Represents the type of null
@@ -37,8 +44,10 @@ namespace Orleans.Serialization.Configuration
             wellKnownTypes[25] = typeof(int[]);
             wellKnownTypes[26] = typeof(string[]);
             wellKnownTypes[27] = typeof(Type);
+#if NET6_0_OR_GREATER
             wellKnownTypes[28] = typeof(DateOnly);
             wellKnownTypes[29] = typeof(TimeOnly);
+#endif
             wellKnownTypes[30] = typeof(DayOfWeek);
             wellKnownTypes[31] = typeof(Uri);
             wellKnownTypes[32] = typeof(Version);
@@ -46,9 +55,13 @@ namespace Orleans.Serialization.Configuration
             wellKnownTypes[34] = typeof(IPEndPoint);
             wellKnownTypes[35] = typeof(ExceptionResponse);
             wellKnownTypes[36] = typeof(CompletedResponse);
+#if NET7_0_OR_GREATER
             wellKnownTypes[37] = typeof(Int128);
             wellKnownTypes[38] = typeof(UInt128);
+#endif
+#if NET5_0_OR_GREATER
             wellKnownTypes[39] = typeof(Half);
+#endif
 
             var allowedTypes = typeManifest.AllowedTypes;
             allowedTypes.Add("System.Globalization.CompareOptions");

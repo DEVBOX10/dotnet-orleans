@@ -82,12 +82,16 @@ public class CompoundTypeAliasTree
     private CompoundTypeAliasTree AddInternal(object key) => AddInternal(key, default);
     private CompoundTypeAliasTree AddInternal(object key, Type? value)
     {
+#if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(key, nameof(key));
+#else
+        if (key is null) throw new ArgumentNullException(nameof(key));
+#endif
         _children ??= new();
 
         if (_children.TryGetValue(key, out var existing))
         {
-            if (value is not null && existing.Value is not null)
+            if (value is not null && existing.Value is { } type && type != value)
             {
                 throw new ArgumentException("A key with this value already exists");
             }
@@ -97,7 +101,7 @@ public class CompoundTypeAliasTree
         }
         else
         {
-            return _children[key] = new CompoundTypeAliasTree(key, value);;
+            return _children[key] = new CompoundTypeAliasTree(key, value);
         }
     }
 }

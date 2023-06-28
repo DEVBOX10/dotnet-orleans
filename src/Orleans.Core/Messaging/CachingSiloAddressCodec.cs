@@ -108,7 +108,7 @@ namespace Orleans.Runtime.Messaging
             var currentTimestamp = Environment.TickCount64;
             if (value is null)
             {
-                writer.WriteVarUInt32(0);
+                writer.WriteByte(1); // writer.WriteVarUInt32(0);
                 return;
             }
 
@@ -131,7 +131,7 @@ namespace Orleans.Runtime.Messaging
                 return;
             }
 
-            var innerWriter = Writer.Create(new PooledArrayBufferWriter(), null);
+            var innerWriter = Writer.Create(new PooledBuffer(), null);
             innerWriter.WriteInt32(value.GetConsistentHashCode());
             WriteSiloAddressInner(ref innerWriter, value);
             innerWriter.Commit();
@@ -158,7 +158,7 @@ namespace Orleans.Runtime.Messaging
             IPAddressCodec.WriteRaw(ref writer, ep.Address);
 
             // Port
-            writer.WriteVarUInt32((uint)ep.Port);
+            writer.WriteVarUInt16((ushort)ep.Port);
 
             // Generation
             writer.WriteInt32(value.Generation);
