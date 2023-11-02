@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,10 +11,8 @@ using Orleans.Configuration;
 using Orleans.GrainDirectory;
 using Orleans.Metadata;
 using Orleans.Runtime.GrainDirectory;
-using Orleans.Runtime.Placement;
 using Orleans.Runtime.Scheduler;
 using Orleans.Serialization.TypeSystem;
-using Orleans.Statistics;
 
 namespace Orleans.Runtime
 {
@@ -28,7 +25,7 @@ namespace Orleans.Runtime
         private readonly GrainDirectoryResolver grainDirectoryResolver;
         private readonly ILocalGrainDirectory directory;
         private readonly ActivationDirectory activations;
-        private IServiceProvider serviceProvider;
+        private readonly IServiceProvider serviceProvider;
         private readonly ILogger logger;
         private readonly string localSiloName;
         private readonly IOptions<GrainCollectionOptions> collectionOptions;
@@ -456,7 +453,7 @@ namespace Orleans.Runtime
                             var activationData = activation.Value;
                             var placementStrategy = activationData.GetComponent<PlacementStrategy>();
                             var isUsingGrainDirectory = placementStrategy is { IsUsingGrainDirectory: true };
-                            if (!isUsingGrainDirectory || grainDirectoryResolver.HasNonDefaultDirectory(activationData.GrainId.Type)) continue;
+                            if (!isUsingGrainDirectory || !grainDirectoryResolver.IsUsingDhtDirectory(activationData.GrainId.Type)) continue;
                             if (!updatedSilo.Equals(directory.GetPrimaryForGrain(activationData.GrainId))) continue;
 
                             activationsToShutdown.Add(activationData);

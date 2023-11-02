@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -24,7 +20,7 @@ namespace UnitTests.StreamingTests
         {
             if (string.IsNullOrWhiteSpace(streamProviderName))
             {
-                throw new ArgumentNullException("streamProviderName");
+                throw new ArgumentNullException(nameof(streamProviderName));
             }
             this.streamProviderName = streamProviderName;
             this.logger = testCluster.Client.ServiceProvider.GetRequiredService<ILogger<SubscriptionMultiplicityTestRunner>>();

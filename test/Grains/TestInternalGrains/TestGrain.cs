@@ -1,11 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Orleans;
 using Orleans.Runtime;
 using Orleans.Runtime.GrainDirectory;
 using UnitTests.GrainInterfaces;
@@ -16,7 +10,7 @@ namespace UnitTests.Grains
     {
         private readonly string _id = Guid.NewGuid().ToString();
         private string label;
-        private ILogger logger;
+        private readonly ILogger logger;
         private IDisposable timer;
 
         public TestGrain(ILoggerFactory loggerFactory)
@@ -163,7 +157,7 @@ namespace UnitTests.Grains
         private readonly string _id = Guid.NewGuid().ToString();
 
         private string label;
-        private ILogger logger;
+        private readonly ILogger logger;
 
         public GuidTestGrain(ILoggerFactory loggerFactory)
         {
@@ -214,7 +208,7 @@ namespace UnitTests.Grains
         private int count;
         private TaskCompletionSource<string> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private IOneWayGrain other;
-        private GrainLocator grainLocator;
+        private readonly GrainLocator grainLocator;
         private int _numSignals;
 
         public OneWayGrain(GrainLocator grainLocator) => this.grainLocator = grainLocator;

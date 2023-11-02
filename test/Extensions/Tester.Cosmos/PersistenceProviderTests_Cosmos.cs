@@ -10,6 +10,7 @@ using Orleans.Providers;
 using Orleans.Configuration;
 using Orleans.Persistence.Cosmos;
 using UnitTests.Persistence;
+using Microsoft.Extensions.Options;
 
 namespace Tester.Cosmos.Persistence;
 
@@ -46,7 +47,7 @@ public class PersistenceProviderTests_Cosmos
         options.ConfigureTestDefaults();
 
         var pkProvider = new DefaultPartitionKeyProvider();
-        var clusterOptions = new ClusterOptions { ClusterId = _clusterId, ServiceId = _serviceId };
+        var clusterOptions = Options.Create(new ClusterOptions { ClusterId = _clusterId, ServiceId = _serviceId });
 
         var store = ActivatorUtilities.CreateInstance<CosmosGrainStorage>(providerRuntime.ServiceProvider, options, clusterOptions, "TestStorage", pkProvider);
         var lifecycle = ActivatorUtilities.CreateInstance<SiloLifecycleSubject>(providerRuntime.ServiceProvider);
@@ -219,9 +220,9 @@ public class PersistenceProviderTests_Cosmos
         TimeSpan readTime = sw.Elapsed;
         output.WriteLine("{0} - Write time = {1} Read time = {2}", store.GetType().FullName, writeTime, readTime);
         Assert.NotNull(storedGrainState.State);
-        Assert.Equal(default(string), storedGrainState.State.A);
-        Assert.Equal(default(int), storedGrainState.State.B);
-        Assert.Equal(default(long), storedGrainState.State.C);
+        Assert.Equal(default, storedGrainState.State.A);
+        Assert.Equal(default, storedGrainState.State.B);
+        Assert.Equal(default, storedGrainState.State.C);
 
         return storedGrainState;
     }

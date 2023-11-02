@@ -1016,7 +1016,7 @@ namespace Orleans.Runtime
                 {
                     try
                     {
-                        return canInterleave.MayInterleave(incoming);
+                        return canInterleave.MayInterleave(GrainInstance, incoming);
                     }
                     catch (Exception exception)
                     {
@@ -1397,10 +1397,10 @@ namespace Orleans.Runtime
                 try
                 {
                     RequestContextExtensions.Import(requestContextData);
-                    await Lifecycle.OnStart(cancellationToken).WithCancellation(cancellationToken, "Timed out waiting for grain lifecycle to complete activation");
+                    await Lifecycle.OnStart(cancellationToken).WithCancellation("Timed out waiting for grain lifecycle to complete activation", cancellationToken);
                     if (GrainInstance is IGrainBase grainBase)
                     {
-                        await grainBase.OnActivateAsync(cancellationToken).WithCancellation(cancellationToken, $"Timed out waiting for {nameof(IGrainBase.OnActivateAsync)} to complete");
+                        await grainBase.OnActivateAsync(cancellationToken).WithCancellation($"Timed out waiting for {nameof(IGrainBase.OnActivateAsync)} to complete", cancellationToken);
                     }
 
                     lock (this)
@@ -1499,7 +1499,11 @@ namespace Orleans.Runtime
                         // Set the forwarding address so that messages enqueued on this activation can be forwarded to
                         // the existing activation.
                         ForwardingAddress = result?.SiloAddress;
-                        DeactivationReason = new(DeactivationReasonCode.DuplicateActivation, "This grain has been activated elsewhere.");
+                        if (ForwardingAddress is { } address)
+                        {
+                            DeactivationReason = new(DeactivationReasonCode.DuplicateActivation, $"This grain is active on another host ({address}).");
+                        }
+
                         success = false;
                         CatalogInstruments.ActivationConcurrentRegistrationAttempts.Add(1);
                         if (_shared.Logger.IsEnabled(LogLevel.Debug))
@@ -1510,7 +1514,7 @@ namespace Orleans.Runtime
                             _shared.Logger.LogDebug(
                                 (int)ErrorCode.Catalog_DuplicateActivation,
                                 "Tried to create a duplicate activation {Address}, but we'll use {ForwardingAddress} instead. "
-                                + "GrainInstance Type is {GrainInstanceType}. {PrimaryMessage}"
+                                + "GrainInstance type is {GrainInstanceType}. {PrimaryMessage}"
                                 + "Full activation address is {Address}. We have {WaitingCount} messages to forward.",
                                 Address,
                                 ForwardingAddress,
@@ -1526,19 +1530,23 @@ namespace Orleans.Runtime
                 catch (Exception exception)
                 {
                     registrationException = exception;
+                    _shared.Logger.LogWarning((int)ErrorCode.Runtime_Error_100064, registrationException, "Failed to register grain {Grain} in grain directory", ToString());
                     success = false;
                 }
 
                 if (!success)
                 {
+                    if (DeactivationReason.ReasonCode == DeactivationReasonCode.None)
+                    {
+                        DeactivationReason = new(DeactivationReasonCode.InternalFailure, registrationException, "Failed to register activation in grain directory.");
+                    }
+
                     lock (this)
                     {
                         SetState(ActivationState.Invalid);
                     }
 
                     UnregisterMessageTarget();
-                    DeactivationReason = new(DeactivationReasonCode.InternalFailure, registrationException, "Failed to register activation in grain directory.");
-                    _shared.Logger.LogWarning((int)ErrorCode.Runtime_Error_100064, registrationException, "Failed to register grain {Grain} in grain directory", ToString());
                 }
             }
 
@@ -1717,10 +1725,10 @@ namespace Orleans.Runtime
                             RequestContext.Clear(); // Clear any previous RC, so it does not leak into this call by mistake.
                             if (GrainInstance is IGrainBase grainBase)
                             {
-                                await grainBase.OnDeactivateAsync(DeactivationReason, ct).WithCancellation(ct, $"Timed out waiting for {nameof(IGrainBase.OnDeactivateAsync)} to complete");
+                                await grainBase.OnDeactivateAsync(DeactivationReason, ct).WithCancellation($"Timed out waiting for {nameof(IGrainBase.OnDeactivateAsync)} to complete", ct);
                             }
 
-                            await Lifecycle.OnStop(ct).WithCancellation(ct, "Timed out waiting for grain lifecycle to complete deactivation");
+                            await Lifecycle.OnStop(ct).WithCancellation("Timed out waiting for grain lifecycle to complete deactivation", ct);
                         }
 
                         if (_shared.Logger.IsEnabled(LogLevel.Debug))

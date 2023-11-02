@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -143,7 +138,7 @@ public class GrainDirectoryPartitionTests
 
     private class MockSiloStatusOracle : ISiloStatusOracle
     {
-        private Dictionary<SiloAddress, SiloStatus> _content = new();
+        private readonly Dictionary<SiloAddress, SiloStatus> _content = new();
 
         public MockSiloStatusOracle(SiloAddress siloAddress = null)
         {

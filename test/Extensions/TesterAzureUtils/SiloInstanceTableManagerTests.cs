@@ -1,8 +1,5 @@
-using System;
 using System.Globalization;
-using System.Linq;
 using System.Net;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orleans.AzureUtils;
 using Orleans.Runtime;
@@ -33,7 +30,7 @@ namespace Tester.AzureUtils
             }
         }
 
-        private string clusterId;
+        private readonly string clusterId;
         private int generation;
         private SiloAddress siloAddress;
         private SiloInstanceTableEntry myEntry;

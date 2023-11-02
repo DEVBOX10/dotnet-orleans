@@ -1,9 +1,4 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Orleans.Internal;
-using Orleans.Runtime;
 using TestExtensions;
 using UnitTests.GrainInterfaces;
 using Xunit;
@@ -12,7 +7,7 @@ namespace DefaultCluster.Tests.ActivationsLifeCycleTests
 {
     public class GrainActivateDeactivateTests : HostedTestClusterEnsureDefaultStarted, IDisposable
     {
-        private IActivateDeactivateWatcherGrain watcher;
+        private readonly IActivateDeactivateWatcherGrain watcher;
 
         public GrainActivateDeactivateTests(DefaultClusterFixture fixture) : base(fixture)
         {

@@ -14,7 +14,6 @@ using System.Text;
 using Xunit;
 using Orleans.Serialization.Serializers;
 using Xunit.Abstractions;
-using System.Threading;
 
 namespace Orleans.Serialization.TestKit
 {
@@ -188,7 +187,7 @@ namespace Orleans.Serialization.TestKit
                 var writer = Writer.CreatePooled(buffer, _sessionPool.GetSession());
                 serializer.Serialize(original, ref writer);
                 buffer.Flush();
-                writer.Output.Dispose();
+                writer.Dispose();
 
                 buffer.Position = 0;
                 var reader = Reader.Create(buffer, _sessionPool.GetSession());
@@ -452,7 +451,7 @@ namespace Orleans.Serialization.TestKit
                     var buffer = bytes.AsMemory();
                     var writer = Writer.Create(buffer, _sessionPool.GetSession());
                     serializer.Serialize(original, ref writer);
-                    var result = buffer.Slice(0, writer.Output.BytesWritten).ToArray();
+                    var result = buffer[..writer.Output.BytesWritten].ToArray();
                     Assert.Equal(expected, result);
                 }
 
@@ -462,7 +461,7 @@ namespace Orleans.Serialization.TestKit
                     var buffer = bytes.AsSpan();
                     var writer = Writer.Create(buffer, _sessionPool.GetSession());
                     serializer.Serialize(original, ref writer);
-                    var result = buffer.Slice(0, writer.Output.BytesWritten).ToArray();
+                    var result = buffer[..writer.Output.BytesWritten].ToArray();
                     Assert.Equal(expected, result);
                 }
 
@@ -486,7 +485,7 @@ namespace Orleans.Serialization.TestKit
                     buffer.SetLength(buffer.Position);
                     buffer.Position = 0;
                     var result = buffer.ToArray();
-                    writer.Output.Dispose();
+                    writer.Dispose();
                     Assert.Equal(expected, result);
                 }
 

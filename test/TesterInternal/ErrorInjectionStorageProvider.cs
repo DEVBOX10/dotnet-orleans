@@ -1,7 +1,4 @@
-using System;
 using System.Runtime.Serialization;
-using System.Threading.Tasks;
-using Orleans;
 using Orleans.Providers;
 using Orleans.Runtime;
 using Microsoft.Extensions.Logging;
@@ -73,7 +70,7 @@ namespace UnitTests.StorageTests
 
     public class ErrorInjectionStorageProvider : MockStorageProvider, IControllable
     {
-        private ILogger logger;
+        private readonly ILogger logger;
 
         public ErrorInjectionStorageProvider(
             ILogger<ErrorInjectionStorageProvider> logger,

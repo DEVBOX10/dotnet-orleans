@@ -2,14 +2,11 @@ using BenchmarkDotNet.Attributes;
 using Benchmarks.Utilities;
 using Orleans.Serialization;
 using Orleans.Serialization.Buffers;
-using Orleans.Serialization.Buffers.Adaptors;
 using Orleans.Serialization.Session;
 using Microsoft.Extensions.DependencyInjection;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO.Pipelines;
-using System.Linq;
 using Xunit;
 using SerializerSession = Orleans.Serialization.Session.SerializerSession;
 
@@ -62,7 +59,7 @@ namespace Benchmarks
             Session.Reset();
             var writer = Writer.CreatePooled(Session);
             Serializer.Serialize(Value, ref writer);
-            writer.Output.Dispose();
+            writer.Dispose();
             return writer.Position;
         }
     }

@@ -63,11 +63,9 @@ namespace Orleans.Runtime.MembershipService
                     MembershipVersion.MinValue,
                     initialEntries);
             this.updates = new AsyncEnumerable<MembershipTableSnapshot>(
-                (previous, proposed) => proposed.Version == MembershipVersion.MinValue || proposed.Version > previous.Version,
-                this.snapshot)
-            {
-                OnPublished = update => Interlocked.Exchange(ref this.snapshot, update)
-            };
+                initialValue: this.snapshot,
+                updateValidator: (previous, proposed) => proposed.Version > previous.Version,
+                onPublished: update => Interlocked.Exchange(ref this.snapshot, update));
 
             this.membershipUpdateTimer = timerFactory.Create(
                 this.clusterMembershipOptions.TableRefreshTimeout,
@@ -318,13 +316,13 @@ namespace Orleans.Runtime.MembershipService
             
             try
             {
-                Func<int, Task<bool>> updateMyStatusTask = async counter =>
+                async Task<bool> updateMyStatusTask(int counter)
                 {
                     numCalls++;
                     if (log.IsEnabled(LogLevel.Debug)) log.LogDebug("Going to try to TryUpdateMyStatusGlobalOnce #{Attempt}", counter);
                     return await TryUpdateMyStatusGlobalOnce(status);  // function to retry
-                };
-                
+                }
+
                 if (status == SiloStatus.Dead && this.membershipTableProvider is SystemTargetBasedMembershipTable)
                 {
                     // SystemTarget-based membership may not be accessible at this stage, so allow for one quick attempt to update

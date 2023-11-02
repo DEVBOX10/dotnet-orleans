@@ -9,7 +9,6 @@ using Orleans.Transactions.Abstractions;
 using Orleans.Storage;
 using Orleans.Configuration;
 using Orleans.Timers.Internal;
-using System.Runtime.CompilerServices;
 
 namespace Orleans.Transactions.State
 {
@@ -32,7 +31,7 @@ namespace Orleans.Transactions.State
         private int failCounter;
 
         // collection tasks
-        private Dictionary<DateTime, PreparedMessages> unprocessedPreparedMessages;
+        private readonly Dictionary<DateTime, PreparedMessages> unprocessedPreparedMessages;
         private class PreparedMessages
         {
             public PreparedMessages(TransactionalStatus status)
